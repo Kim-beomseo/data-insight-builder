@@ -521,22 +521,149 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         };
 
+        const chartWrapper = document.getElementById("chartWrapper");
+        if (chartWrapper && tool !== "top_bottom_n") {
+            chartWrapper.style.height = "400px";
+        }
+
+        const chartPlugins = [];
+
         if (tool === "top_bottom_n") {
             chartType = "bar";
             chartOptions.indexAxis = "y"; // 수평 막대
-            const topItems = res.top_n || [];
-            const bottomItems = res.bottom_n || [];
-            const combined = [...topItems, ...bottomItems];
 
-            chartData.labels = combined.map(item => item.label);
-            chartData.datasets = [{
-                label: `인터넷 사용률 (%) - ${res.reference_period}년`,
-                data: combined.map(item => item.value),
-                backgroundColor: combined.map((item, i) => {
-                    if (item.is_target) return "#f59e0b"; // 비교 대상 국가(대한민국 등) 오렌지/골드 강조
-                    return i < topItems.length ? "#2563eb" : "#f87171";
-                })
-            }];
+            const topItems = (res.top_n || []).filter(item => !item.is_target);
+            const targetItems = (res.top_n || []).filter(item => item.is_target);
+            const bottomItems = (res.bottom_n || []).filter(item => !item.is_target);
+            const allItems = [...topItems, ...targetItems, ...bottomItems];
+
+            // 21개 국가가 잘리지 않고 각 행마다 충분한 높이(32px)를 갖도록 동적 확장
+            const dynamicHeight = Math.max(480, allItems.length * 32 + 80);
+            if (chartWrapper) {
+                chartWrapper.style.height = `${dynamicHeight}px`;
+            }
+
+            // 라벨 포맷: 순위 및 구분([상위 N위], [13위] 대한민국, [하위 N위]) 명시
+            chartData.labels = allItems.map(item => {
+                if (item.is_target) {
+                    return `⭐ [${item.rank || 13}위] ${item.label}`;
+                }
+                if (topItems.includes(item)) {
+                    return `[상위 ${item.rank}위] ${item.label}`;
+                }
+                return `[하위 ${item.rank}위] ${item.label}`;
+            });
+
+            // 3개 데이터셋 분리 (상위 Top 국가 / 대한민국 비교 / 하위 Bottom 국가)
+            chartData.datasets = [
+                {
+                    label: `상위 Top 국가 (1~${topItems.length}위)`,
+                    data: allItems.map(item => topItems.includes(item) ? item.value : null),
+                    backgroundColor: "#2563eb",
+                    borderColor: "#1d4ed8",
+                    borderWidth: 1,
+                    borderRadius: 4
+                },
+                {
+                    label: "비교 대상 국가 (대한민국)",
+                    data: allItems.map(item => item.is_target ? item.value : null),
+                    backgroundColor: "#f59e0b",
+                    borderColor: "#d97706",
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: `하위 Bottom 국가 (하위 1~${bottomItems.length}위)`,
+                    data: allItems.map(item => bottomItems.includes(item) ? item.value : null),
+                    backgroundColor: "#ef4444",
+                    borderColor: "#dc2626",
+                    borderWidth: 1,
+                    borderRadius: 4
+                }
+            ];
+
+            chartOptions.scales = {
+                x: {
+                    stacked: true,
+                    beginAtZero: true,
+                    max: 108,
+                    title: {
+                        display: true,
+                        text: "인터넷 이용률 (%)",
+                        font: { size: 12, weight: "bold" }
+                    },
+                    ticks: {
+                        callback: (val) => val + "%"
+                    },
+                    grid: {
+                        color: "#f1f5f9"
+                    }
+                },
+                y: {
+                    stacked: true,
+                    ticks: {
+                        autoSkip: false, // 21개 국가 모두 절대 생략 없이 100% 온전하게 표시!
+                        font: (ctx) => {
+                            const lbl = chartData.labels[ctx.index] || "";
+                            return {
+                                size: lbl.includes("대한민국") ? 13 : 11,
+                                weight: lbl.includes("대한민국") ? "bold" : "normal"
+                            };
+                        },
+                        color: (ctx) => {
+                            const lbl = chartData.labels[ctx.index] || "";
+                            return lbl.includes("대한민국") ? "#b45309" : "#334155";
+                        }
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            };
+
+            chartOptions.plugins = {
+                legend: {
+                    display: true,
+                    position: "top",
+                    labels: {
+                        usePointStyle: true,
+                        boxWidth: 10,
+                        font: { size: 12, weight: "bold" },
+                        padding: 14
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            if (ctx.raw === null || ctx.raw === undefined) return null;
+                            return ` ${ctx.dataset.label}: ${ctx.raw}%`;
+                        }
+                    }
+                }
+            };
+
+            // 차트 막대 우측에 정확한 백분율 수치 직접 표기 플러그인
+            chartPlugins.push({
+                id: "valueLabels",
+                afterDatasetsDraw(chart) {
+                    const c = chart.ctx;
+                    c.save();
+                    chart.data.datasets.forEach((dataset, datasetIdx) => {
+                        const meta = chart.getDatasetMeta(datasetIdx);
+                        meta.data.forEach((bar, index) => {
+                            const val = dataset.data[index];
+                            if (val !== null && val !== undefined) {
+                                c.font = datasetIdx === 1 ? "bold 12px Pretendard, sans-serif" : "bold 11px Pretendard, sans-serif";
+                                c.fillStyle = datasetIdx === 1 ? "#b45309" : (datasetIdx === 0 ? "#1e40af" : "#991b1b");
+                                c.textAlign = "left";
+                                c.textBaseline = "middle";
+                                c.fillText(`${Number(val).toFixed(2)}%`, bar.x + 6, bar.y);
+                            }
+                        });
+                    });
+                    c.restore();
+                }
+            });
 
         } else if (tool === "trend_line") {
             chartType = "line";
@@ -628,7 +755,8 @@ document.addEventListener("DOMContentLoaded", () => {
         activeChartInstance = new Chart(ctx, {
             type: chartType,
             data: chartData,
-            options: chartOptions
+            options: chartOptions,
+            plugins: chartPlugins
         });
 
         logEvent("CHART", `차트 렌더 완료 (종류: ${chartType}, 도구: ${tool})`);

@@ -478,11 +478,14 @@ body {
 
 .chart-wrapper {
     position: relative;
-    height: 380px;
+    min-height: 400px;
     width: 100%;
     margin-bottom: 24px;
-    padding: 10px;
+    padding: 14px;
     background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    transition: height 0.2s ease;
 }
 
 .section-action {
