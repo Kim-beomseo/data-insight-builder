@@ -256,6 +256,35 @@
 
                 <!-- 생성된 마크다운 보고서 컨테이너 -->
                 <div class="report-container markdown-body" id="reportContainer" style="display: none;"></div>
+
+                <!-- 7단계: 후속 질문 대화창 (Follow-up Chat) -->
+                <div class="followup-box" id="followupBox" style="display: none;">
+                    <div class="followup-header">
+                        <h3>💬 보고서 결과에 대해 질문하기</h3>
+                        <p class="followup-subtitle">보고서 내용 중 궁금한 점을 자유롭게 질문하거나 아래 추천 질문 말풍선을 클릭해보세요.</p>
+                    </div>
+
+                    <!-- 추천 질문 말풍선 칩들 -->
+                    <div class="suggested-chips-area">
+                        <span class="chips-label">💡 추천 질문:</span>
+                        <div class="chips-container" id="chipsContainer"></div>
+                    </div>
+
+                    <!-- 채팅 메시지 목록 -->
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-empty-hint" id="chatEmptyHint">
+                            위의 말풍선 버튼을 클릭하거나 아래 입력창에 질문을 입력해보세요!
+                        </div>
+                    </div>
+
+                    <!-- 채팅 입력창 -->
+                    <div class="chat-input-bar">
+                        <input type="text" id="followupInput" class="chat-input" placeholder="질문을 입력하세요... (예: '중학생도 이해할 수 있게 쉽게 설명해줘')">
+                        <button class="btn btn-primary chat-send-btn" id="sendFollowupBtn">
+                            <span>전송 🚀</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </section>
 

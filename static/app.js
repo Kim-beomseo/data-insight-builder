@@ -600,6 +600,12 @@ document.addEventListener("DOMContentLoaded", () => {
             // Marked.js 마크다운 렌더링
             reportContainer.innerHTML = marked.parse(data.explanation);
             reportContainer.style.display = "block";
+            latestReportText = data.explanation;
+
+            // 후속 질문 대화창 표시 및 추천 말풍선 칩 렌더링
+            followupBox.style.display = "block";
+            renderSuggestedChips(lastCalculationResult.tool, lastCalculationResult.result);
+
             reportContainer.scrollIntoView({ behavior: "smooth" });
 
         } catch (e) {
@@ -611,6 +617,149 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // ==========================================
+    // 7단계: 후속 질문 대화창 & 말풍선 칩 로직
+    // ==========================================
+    const followupBox = document.getElementById("followupBox");
+    const chipsContainer = document.getElementById("chipsContainer");
+    const chatMessages = document.getElementById("chatMessages");
+    const chatEmptyHint = document.getElementById("chatEmptyHint");
+    const followupInput = document.getElementById("followupInput");
+    const sendFollowupBtn = document.getElementById("sendFollowupBtn");
+
+    let latestReportText = "";
+    let chatHistory = [];
+
+    function renderSuggestedChips(tool, result) {
+        chipsContainer.innerHTML = "";
+
+        // 필수 포함 질문: "중학생도 이해할 수 있게 쉽게 설명해줘"
+        const mandatoryQuestion = "중학생도 이해할 수 있게 쉽게 설명해줘";
+
+        // 결과 및 도구에 맞춘 추천 질문 목록
+        const toolQuestions = [];
+        if (tool === "top_bottom_n") {
+            toolQuestions.push("1위와 꼴찌의 격차가 왜 이렇게 큰지 쉽게 설명해줘");
+            toolQuestions.push("여기서 가장 의외이거나 주목할 만한 나라는 어디야?");
+        } else if (tool === "trend_line") {
+            toolQuestions.push("어느 시점에 가장 급격하게 증가했는지 쉽게 설명해줘");
+            toolQuestions.push("앞으로 향후 5년 뒤는 어떻게 변화할지 전망해줘");
+        } else if (tool === "compare_one_vs_all") {
+            toolQuestions.push("한국의 순위가 갖는 의미를 쉽게 설명해줘");
+            toolQuestions.push("상위권 나라들과 한국의 차이점은 뭐야?");
+        } else if (tool === "correlation_scatter") {
+            toolQuestions.push("상관계수가 높은 게 왜 인과관계가 아닌지 쉽게 설명해줘");
+            toolQuestions.push("이 산점도 점들이 현실에서 뜻하는 바를 쉽게 설명해줘");
+        } else if (tool === "change_rate") {
+            toolQuestions.push("지난 10년 동안 가장 빠르게 성장한 나라와 그 이유를 쉽게 설명해줘");
+        } else if (tool === "group_summary") {
+            toolQuestions.push("소득 그룹별 격차가 발생하는 이유를 쉽게 설명해줘");
+        } else if (tool === "distribution") {
+            toolQuestions.push("대부분의 나라가 어느 구간에 몰려있는지 쉽게 설명해줘");
+        }
+
+        // 공통 유용한 질문
+        toolQuestions.push("이 통계 결과를 한 문장으로 핵심 요약해줘");
+        toolQuestions.push("이 데이터를 바탕으로 어떤 정책이나 행동 결정을 내릴 수 있어?");
+
+        const allChips = [
+            { text: mandatoryQuestion, isHighlight: true, icon: "💡" },
+            ...toolQuestions.map(q => ({ text: q, isHighlight: false, icon: "💬" }))
+        ];
+
+        allChips.forEach(chip => {
+            const btn = document.createElement("button");
+            btn.className = `chip-btn ${chip.isHighlight ? 'highlight-chip' : ''}`;
+            btn.innerHTML = `<span>${chip.icon}</span> <span>${escapeHtml(chip.text)}</span>`;
+            btn.addEventListener("click", () => {
+                followupInput.value = chip.text;
+                sendFollowup(chip.text);
+            });
+            chipsContainer.appendChild(btn);
+        });
+    }
+
+    async function sendFollowup(questionText) {
+        const text = questionText || followupInput.value.trim();
+        if (!text) return;
+
+        followupInput.value = "";
+        if (chatEmptyHint) chatEmptyHint.style.display = "none";
+
+        // 사용자 말풍선 추가
+        appendChatMessage("user", text);
+        chatHistory.push({ role: "user", content: text });
+
+        // AI 로딩 버블 추가
+        const loadingBubble = appendChatMessage("assistant", "🤔 분석 결과를 검토하여 답변을 작성하고 있습니다...", true);
+
+        sendFollowupBtn.disabled = true;
+        logEvent("EXPLAIN", `후속 질문 전송: "${text}"`);
+
+        try {
+            const res = await fetch("/followup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    question: text,
+                    mode: currentExplainMode,
+                    tool: lastCalculationResult ? lastCalculationResult.tool : "",
+                    current_explanation: latestReportText,
+                    calculation_result: lastCalculationResult,
+                    history: chatHistory
+                })
+            });
+            const data = await res.json();
+
+            if (!res.ok || data.status !== "success") {
+                throw new Error(data.message || "답변 생성 실패");
+            }
+
+            loadingBubble.innerHTML = marked.parse(data.answer);
+            chatHistory.push({ role: "assistant", content: data.answer });
+            logEvent("EXPLAIN", "후속 답변 수신 완료");
+
+        } catch (e) {
+            loadingBubble.innerHTML = `<span style="color:#ef4444;">⚠️ 오류: ${escapeHtml(e.message)}</span>`;
+            logEvent("ERROR", `후속 질문 실패: ${e.message}`);
+        } finally {
+            sendFollowupBtn.disabled = false;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+
+    function appendChatMessage(role, content, isLoading = false) {
+        const msgDiv = document.createElement("div");
+        msgDiv.className = `chat-message ${role}`;
+
+        const senderLabel = document.createElement("div");
+        senderLabel.className = "chat-sender-label";
+        senderLabel.textContent = role === "user" ? "나의 질문" : "AI 데이터 분석가";
+
+        const bubbleDiv = document.createElement("div");
+        bubbleDiv.className = `chat-bubble ${role}`;
+        if (isLoading) {
+            bubbleDiv.innerHTML = `<span style="color:#64748b;">${escapeHtml(content)}</span>`;
+        } else if (role === "user") {
+            bubbleDiv.textContent = content;
+        } else {
+            bubbleDiv.innerHTML = marked.parse(content);
+        }
+
+        msgDiv.appendChild(senderLabel);
+        msgDiv.appendChild(bubbleDiv);
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return bubbleDiv;
+    }
+
+    sendFollowupBtn.addEventListener("click", () => sendFollowup());
+    followupInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            sendFollowup();
+        }
+    });
+
     // 로그 콘솔 접기 토글
     toggleLogBtn.addEventListener("click", () => {
         const isHidden = logBody.style.display === "none";
@@ -618,3 +767,4 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("logToggleIcon").textContent = isHidden ? "▼" : "▲";
     });
 });
+

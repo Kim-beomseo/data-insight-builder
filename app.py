@@ -542,7 +542,89 @@ Pandas가 직접 계산하여 산출한 아래의 정확한 계산 결과를 바
         "explanation": report_text
     }), 200
 
+# ==========================================
+# POST /followup (후속 질문 질의응답)
+# ==========================================
+@app.route("/followup", methods=["POST"])
+def followup_chat():
+    """
+    POST /followup (보고서 결과 기반 대화형 후속 질의응답)
+    """
+    logger.info("[REQUEST] POST /followup")
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key or api_key == "your_gemini_api_key_here":
+        return jsonify({"status": "error", "message": "Gemini API Key가 설정되지 않았습니다."}), 500
+
+    data = request.get_json(silent=True) or {}
+    question = data.get("question", "").strip()
+    if not question:
+        return jsonify({"status": "error", "message": "질문 내용을 입력해주세요."}), 400
+
+    mode = data.get("mode", "B")
+    tool_name = data.get("tool", "")
+    current_explanation = data.get("current_explanation", "")
+    calc_result = data.get("calculation_result", {})
+    history = data.get("history", [])
+
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    logger.info(f"[AI] followup 질의응답 요청 (질문='{question[:30]}...', 모드={mode})")
+
+    conversation_context = ""
+    for h in history[-4:]:
+        role_label = "사용자" if h.get("role") == "user" else "AI 어시스턴트"
+        conversation_context += f"{role_label}: {h.get('content')}\n"
+
+    system_instruction = f"""
+당신은 친절하고 전문적인 수석 데이터 과학자이자 통계 교육 전문가입니다.
+사용자가 방금 확인한 데이터 분석 보고서 및 Pandas 계산 결과를 바탕으로 후속 질문에 명확하게 답변해야 합니다.
+
+[분석 정보 및 배경 데이터]
+- 사용된 분석 도구: {tool_name}
+- 분석 모드: 모드 {mode}
+- 기준 시점: {calc_result.get('reference_period')}
+- 분석 대상 관측치 수: {calc_result.get('rows_used')}개 (제외 행: {calc_result.get('rows_excluded')}개)
+- 주의사항: {calc_result.get('caution')}
+- 직전에 생성된 보고서 내용 요약:
+{current_explanation[:1500]}
+
+[최근 대화 맥락]
+{conversation_context}
+
+[사용자 후속 질문]
+{question}
+
+[답변 작성 가이드]
+1. 사용자가 "쉽게 설명해줘" 또는 "중학생도 이해할 수 있게"라고 요청하거나 쉬운 설명을 원할 경우, 어려운 전문 통계 용어를 피하고 친숙한 비유(학교 성적, 시험 등수, 스마트폰 사용 일상 등)를 들어 눈높이에 맞춰 직관적이고 다정하게 설명하세요.
+2. 사실에 기반하여 답변하되, Pandas 계산 결과에 없는 가상의 통계 숫자를 지어내지(환각) 마세요.
+3. 데이터로 증명할 수 없는 원인(예: 왜 특정 국가가 더 높은지 등)에 대해서는 "이 데이터만으로는 단정할 수 없으며 ~한 외부 요인이 영향을 미쳤을 수 있습니다"와 같이 균형 잡힌 시각으로 안내하세요.
+4. 마크다운 형식을 활용하여 읽기 쉽게 문단을 나누고 핵심 키워드는 볼드체로 강조하세요.
+"""
+
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=model_name,
+            contents=system_instruction,
+            config=types.GenerateContentConfig(
+                temperature=0.3
+            )
+        )
+        answer_text = response.text.strip()
+    except Exception as e:
+        logger.error(f"[ERROR] Gemini followup API 실패: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": f"답변 생성 중 오류가 발생했습니다: {str(e)}"}), 500
+
+    logger.info("[AI] followup 응답 수신 완료")
+
+    return jsonify({
+        "status": "success",
+        "question": question,
+        "answer": answer_text
+    }), 200
+
 if __name__ == "__main__":
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     logger.info("Starting Flask server on port 5000...")
     app.run(host="127.0.0.1", port=5000, debug=debug_mode)
+
