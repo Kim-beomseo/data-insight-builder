@@ -1,0 +1,18 @@
+# Python 가상환경
+.venv/
+venv/
+ENV/
+
+# 환경변수 및 보안 (API Key 절대 커밋 금지)
+.env
+
+# 파이썬 캐시 파일
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE 및 OS 설정
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
