@@ -221,6 +221,179 @@ def inspect_file():
     }), 200
 
 # ==========================================
+# POST /query (자연어 질문 분석 엔드포인트)
+# ==========================================
+@app.route("/query", methods=["POST"])
+def query_data():
+    """
+    POST /query (사용자의 자연어 질문을 해석하여 적합한 도구 실행 및 답변 반환)
+    """
+    logger.info("[REQUEST] POST /query")
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key or api_key == "your_gemini_api_key_here":
+        return jsonify({"status": "error", "message": "Gemini API Key가 설정되지 않았습니다."}), 500
+
+    data = request.get_json(silent=True) or {}
+    question = data.get("question", "").strip()
+    if not question:
+        return jsonify({"status": "error", "message": "질문 내용을 입력해주세요."}), 400
+
+    df = CURRENT_DATASET.get("df")
+    if df is None:
+        default_csv = "data/API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv"
+        if os.path.exists(default_csv):
+            with open(default_csv, "rb") as f:
+                content_str, _ = try_decode(f.read())
+                df, _, _ = detect_header_and_parse(content_str)
+                CURRENT_DATASET["df"] = df
+
+    if df is None:
+        return jsonify({"status": "error", "message": "분석할 데이터가 없습니다. 먼저 CSV 파일을 업로드해주세요."}), 400
+
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    logger.info(f"[AI] 자연어 질의 분석 시작: '{question}'")
+
+    year_cols = tools.extract_year_columns(df)
+    rec_year = year_cols[-2] if len(year_cols) >= 2 else (year_cols[-1] if year_cols else "2024")
+
+    # 1. 자연어 질문 의도 분석 및 도구 매핑 (Gemini)
+    plan_prompt = f"""
+당신은 시니어 데이터 과학자입니다. 사용자의 자연어 질문을 분석하여, 데이터셋 분석에 가장 적합한 도구(1개)와 파라미터를 JSON으로 계획하세요.
+
+[사용 가능한 12종 도구 카탈로그]
+1. top_bottom_n: 기준연도 기준 상위 N개 및 하위 N개 국가 (수평 막대) -> params: reference_period, n, exclude_aggregates
+2. compare_one_vs_all: 특정 대상 국가와 전체 평균·중앙값 비교 (강조 막대) -> params: reference_period, item, exclude_aggregates
+3. trend_line: 주요 국가들의 연도별 시계열 추이 (선 차트) -> params: items (리스트)
+4. group_summary: 소득/지역 그룹별 통계 -> params: reference_period, exclude_aggregates
+5. change_rate: 두 시점 사이 변화량·변화율 -> params: reference_period, base_period
+6. distribution: 구간별 빈도 분포 -> params: reference_period
+7. correlation_scatter: 연도 간 상관계수 -> params: reference_period, compare_column
+8. describe_numeric: 기초 통계 요약 -> params: reference_period
+
+[데이터셋 정보]
+- 국가 열: {df.columns[0]}
+- 연도 열: {year_cols[0]} ~ {year_cols[-1]} (권장: {rec_year})
+- 한국의 영문 명칭은 'Korea, Rep.' 입니다.
+
+[사용자 질문]
+"{question}"
+
+반드시 아래 JSON 형식으로만 응답:
+{{
+  "tool": "top_bottom_n",
+  "params": {{
+    "reference_period": "2024",
+    "n": 10,
+    "exclude_aggregates": true
+  }},
+  "compare_item": "Korea, Rep."
+}}
+(참고: 특정 국가와의 비교나 위치를 함께 물어본 경우 compare_item에 'Korea, Rep.' 등을 표기)
+"""
+
+    client = genai.Client(api_key=api_key)
+    try:
+        plan_res = client.models.generate_content(
+            model=model_name,
+            contents=plan_prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1)
+        )
+        plan_json = json.loads(plan_res.text.strip())
+        tool_name = plan_json.get("tool", "top_bottom_n")
+        params = plan_json.get("params", {})
+        compare_item = plan_json.get("compare_item")
+    except Exception as e:
+        logger.warning(f"[AI] 계획 파싱 실패, 기본 top_bottom_n 적용: {str(e)}")
+        tool_name = "top_bottom_n"
+        params = {"reference_period": rec_year, "n": 10, "exclude_aggregates": True}
+        compare_item = "Korea, Rep."
+
+    if tool_name not in tools.TOOL_REGISTRY:
+        tool_name = "top_bottom_n"
+
+    # 2. Pandas 엔진으로 계산 실행
+    tool_func = tools.TOOL_REGISTRY[tool_name]
+    sig = inspect.signature(tool_func)
+    valid_args = {k: v for k, v in params.items() if k in sig.parameters}
+    if tool_name in REQUIRES_REFERENCE_PERIOD and "reference_period" not in valid_args:
+        valid_args["reference_period"] = rec_year
+
+    try:
+        calc_result = tool_func(df, **valid_args)
+    except Exception as e:
+        logger.error(f"[ERROR] 자연어 매핑 도구 실행 실패: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": f"데이터 분석 중 오류 발생: {str(e)}"}), 500
+
+    # 3. 추가 비교 대상(예: 대한민국) 정보 보강
+    if compare_item:
+        try:
+            comp_res = tools.compare_one_vs_all(
+                df, 
+                reference_period=valid_args.get("reference_period", rec_year), 
+                item=compare_item, 
+                exclude_aggregates=True
+            )
+            extra_comparison = comp_res.get("result", {})
+            calc_result["extra_comparison"] = extra_comparison
+            
+            # top_bottom_n 인 경우 차트에서 함께 볼 수 있도록 top_n에 타깃 국가 추가
+            if tool_name == "top_bottom_n" and "top_n" in calc_result.get("result", {}):
+                exists = any(item.get("label") == compare_item for item in calc_result["result"]["top_n"])
+                if not exists:
+                    calc_result["result"]["top_n"].append({
+                        "rank": extra_comparison.get("target_rank"),
+                        "label": f"{compare_item} (대한민국 📍)",
+                        "value": extra_comparison.get("target_value"),
+                        "is_target": True
+                    })
+        except Exception as ce:
+            logger.warning(f"[WARN] 추가 비교 국가 연산 생략: {str(ce)}")
+
+    # 4. 정확한 계산 결과를 기반으로 Gemini 자연어 답변 생성
+    answer_prompt = f"""
+당신은 신뢰할 수 있는 전문 데이터 분석가입니다.
+사용자의 질문에 대해 아래 Pandas가 직접 계산한 정확한 통계 수치를 바탕으로 명쾌하고 친절하게 답변하세요.
+
+[사용자 질문]
+"{question}"
+
+[Pandas 정확 계산 결과]
+- 사용된 도구: {tool_name}
+- 기준 시점: {calc_result.get('reference_period')}
+- 분석 대상 관측치: {calc_result.get('rows_used')}개국
+- 주요 계산 수치:
+{json.dumps(calc_result.get('result', {}), ensure_ascii=False, indent=2)}
+
+[답변 가이드]
+1. 사용자의 질문에 직접적으로 명쾌한 결론을 먼저 제시하세요.
+2. 상위 국가들의 순위와 정확한 수치(% 단위)를 나열하고, 비교 대상 국가(예: 대한민국)의 정확한 순위(예: 188개국 중 13위)와 수치(97.90%)를 명확히 밝히세요.
+3. 숫자를 임의로 바꾸거나 추정하지 말고, 제공된 계산 결과의 숫자만 인용하세요.
+4. 마크다운 형식(글머리 기호, 볼드체)을 활용하여 가독성 높게 작성하세요.
+"""
+
+    try:
+        answer_res = client.models.generate_content(
+            model=model_name,
+            contents=answer_prompt,
+            config=types.GenerateContentConfig(temperature=0.2)
+        )
+        answer_text = answer_res.text.strip()
+    except Exception as e:
+        logger.error(f"[ERROR] 답변 생성 실패: {str(e)}", exc_info=True)
+        answer_text = "통계 계산은 완료되었으나 설명 생성 중 오류가 발생했습니다."
+
+    logger.info("[AI] 자연어 질의응답 및 시각화 데이터 생성 완료")
+
+    return jsonify({
+        "status": "success",
+        "question": question,
+        "answer": answer_text,
+        "tool": tool_name,
+        "calculation_result": calc_result
+    }), 200
+
+# ==========================================
 # POST /suggest (Step 17: Gemini 분석 제안)
 # ==========================================
 @app.route("/suggest", methods=["POST"])

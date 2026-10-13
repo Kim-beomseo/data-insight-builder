@@ -108,18 +108,79 @@
                 </div>
 
                 <div class="section-action">
-                    <button class="btn btn-success" id="requestSuggestBtn">
-                        <span>🤖 Gemini AI에게 맞춤 분석 추천받기</span>
+                    <button class="btn btn-secondary" id="requestSuggestBtn">
+                        <span>🤖 카탈로그 추천 목록 보기</span>
                     </button>
                 </div>
             </div>
         </section>
 
-        <!-- 3단계: AI 분석 추천 카드 목록 -->
+        <!-- 신규 3단계: 자연어 질문으로 분석하기 (AI 분석 추천 전 위치) -->
+        <section class="card nlp-query-card" id="nlpQuerySection" style="display: none;">
+            <div class="card-header">
+                <h2>3. 자연어로 데이터 질문하기 (Smart Data Query)</h2>
+                <span class="step-tag highlight">자연어 분석</span>
+            </div>
+            <div class="card-body">
+                <p class="section-desc">업로드한 데이터에 대해 알고 싶은 내용을 일상 언어로 질문하면, AI가 정확한 통계를 계산하여 답변하고 전용 시각화 차트를 준비합니다.</p>
+                
+                <!-- 추천 예시 질문 칩들 -->
+                <div class="nlp-example-chips">
+                    <span class="chips-label">💡 추천 질문 예시 (클릭하면 바로 입력):</span>
+                    <div class="chips-container" id="nlpExampleChips">
+                        <button class="chip-btn highlight-chip" data-query="2024년 세계 1~10등까지 순위국가와 대한민국을 함께 비교해줘.">
+                            <span>🌟</span> <span>2024년 세계 1~10등까지 순위국가와 대한민국을 함께 비교해줘</span>
+                        </button>
+                        <button class="chip-btn" data-query="지난 10년간 인터넷 보급률이 가장 많이 증가한 상위 5개국은 어디야?">
+                            <span>📈</span> <span>지난 10년간 인터넷 보급률이 가장 많이 증가한 상위 5개국은?</span>
+                        </button>
+                        <button class="chip-btn" data-query="한국, 미국, 일본의 연도별 인터넷 이용률 추이를 비교해줘.">
+                            <span>📉</span> <span>한국, 미국, 일본의 연도별 인터넷 이용률 추이를 비교해줘</span>
+                        </button>
+                        <button class="chip-btn" data-query="고소득 국가와 저소득 국가의 인터넷 이용률 격차는 얼마나 돼?">
+                            <span>📊</span> <span>고소득 국가와 저소득 국가의 인터넷 이용률 격차는 얼마나 돼?</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 자연어 입력 바 -->
+                <div class="nlp-input-bar">
+                    <input type="text" id="nlpQueryInput" class="nlp-input" placeholder="궁금한 내용을 질문하세요... (예: 2024년 세계 1~10등까지 순위국가와 대한민국을 함께 비교해줘)">
+                    <button class="btn btn-primary" id="sendNlpQueryBtn">
+                        <span>🔍 질문 분석 실행</span>
+                    </button>
+                </div>
+
+                <!-- 질의 로딩 인디케이터 -->
+                <div class="loading-spinner" id="nlpLoading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>AI가 질문 의도를 파악하고 Pandas로 실제 데이터를 정밀 계산하고 있습니다...</p>
+                </div>
+
+                <!-- 자연어 답변 결과 상자 -->
+                <div class="nlp-answer-box" id="nlpAnswerBox" style="display: none;">
+                    <div class="nlp-answer-header">
+                        <span class="nlp-badge">💡 데이터 기반 AI 답변</span>
+                        <span class="nlp-tool-badge" id="nlpMatchedToolBadge">사용 도구: top_bottom_n</span>
+                    </div>
+                    <div class="nlp-answer-content markdown-body" id="nlpAnswerContent"></div>
+                    
+                    <!-- 차트 시각화 보기 강조 버튼 -->
+                    <div class="nlp-visualize-action">
+                        <button class="btn btn-success btn-lg" id="nlpVisualizeBtn">
+                            <span>📊 차트 및 통계 시각화 보기</span>
+                        </button>
+                        <span class="visualize-hint">이 분석 결과로 Chart.js 시각화 그래프를 확인하고, A/B 보고서 생성으로 바로 이어집니다.</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4단계: AI 분석 추천 카드 목록 -->
         <section class="card suggest-card" id="suggestSection" style="display: none;">
             <div class="card-header">
-                <h2>3. Gemini AI 추천 분석 카탈로그</h2>
-                <span class="step-tag">Step 3</span>
+                <h2>4. Gemini AI 추천 분석 카탈로그</h2>
+                <span class="step-tag">Step 4</span>
             </div>
             <div class="card-body">
                 <p class="section-desc">데이터셋의 결측률과 집계 행 구조를 고려하여 엄선된 12종 카탈로그 분석 제안입니다.</p>
@@ -127,11 +188,11 @@
             </div>
         </section>
 
-        <!-- 4단계: 사용자 지정 분석 실행 도구 바 -->
+        <!-- 5단계: 사용자 지정 분석 실행 도구 바 -->
         <section class="card run-card" id="runSection" style="display: none;">
             <div class="card-header">
-                <h2>4. 분석 도구 직접 설정 및 실행 (Pandas 엔진)</h2>
-                <span class="step-tag">Step 4</span>
+                <h2>5. 분석 도구 직접 설정 및 실행 (Pandas 엔진)</h2>
+                <span class="step-tag">Step 5</span>
             </div>
             <div class="card-body">
                 <div class="run-form">

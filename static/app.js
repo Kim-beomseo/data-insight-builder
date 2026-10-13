@@ -38,6 +38,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const previewTbody = document.getElementById("previewTbody");
     const requestSuggestBtn = document.getElementById("requestSuggestBtn");
 
+    const nlpQuerySection = document.getElementById("nlpQuerySection");
+    const nlpExampleChips = document.getElementById("nlpExampleChips");
+    const nlpQueryInput = document.getElementById("nlpQueryInput");
+    const sendNlpQueryBtn = document.getElementById("sendNlpQueryBtn");
+    const nlpLoading = document.getElementById("nlpLoading");
+    const nlpAnswerBox = document.getElementById("nlpAnswerBox");
+    const nlpMatchedToolBadge = document.getElementById("nlpMatchedToolBadge");
+    const nlpAnswerContent = document.getElementById("nlpAnswerContent");
+    const nlpVisualizeBtn = document.getElementById("nlpVisualizeBtn");
+    let lastNlpResult = null;
+
     const suggestSection = document.getElementById("suggestSection");
     const suggestionsContainer = document.getElementById("suggestionsContainer");
 
@@ -224,6 +235,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             inspectSection.style.display = "block";
+            nlpQuerySection.style.display = "block";
             runSection.style.display = "block";
             inspectSection.scrollIntoView({ behavior: "smooth" });
 
@@ -252,7 +264,103 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // ==========================================
-    // 3단계: AI 추천 분석 (/suggest)
+    // 3단계: 자연어 질문 분석 (POST /query)
+    // ==========================================
+    async function executeNlpQuery(queryText) {
+        const text = (queryText || nlpQueryInput.value).trim();
+        if (!text) {
+            alert("질문 내용을 입력해주세요.");
+            nlpQueryInput.focus();
+            return;
+        }
+
+        nlpQueryInput.value = text;
+        sendNlpQueryBtn.disabled = true;
+        nlpLoading.style.display = "block";
+        nlpAnswerBox.style.display = "none";
+        logEvent("NLP_QUERY", `자연어 질문 실행: "${text}"`);
+
+        try {
+            const res = await fetch("/query", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question: text })
+            });
+            const data = await res.json();
+
+            if (!res.ok || data.status !== "success") {
+                throw new Error(data.message || "자연어 질문 분석 중 오류가 발생했습니다.");
+            }
+
+            lastNlpResult = data;
+            logEvent("NLP_QUERY", `답변 생성 완료 (도구: ${data.tool})`);
+
+            // 답변 및 뱃지 표시
+            nlpMatchedToolBadge.textContent = `실행 도구: ${data.tool}`;
+            nlpAnswerContent.innerHTML = marked.parse(data.answer);
+            nlpAnswerBox.style.display = "block";
+
+            // 답변 영역으로 스크롤
+            nlpAnswerBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+        } catch (e) {
+            alert(`질의 분석 오류: ${e.message}`);
+            logEvent("ERROR", `자연어 질의 실패: ${e.message}`);
+        } finally {
+            sendNlpQueryBtn.disabled = false;
+            nlpLoading.style.display = "none";
+        }
+    }
+
+    sendNlpQueryBtn.addEventListener("click", () => executeNlpQuery());
+
+    nlpQueryInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            executeNlpQuery();
+        }
+    });
+
+    // 추천 질문 칩 클릭 이벤트 위임
+    if (nlpExampleChips) {
+        nlpExampleChips.addEventListener("click", (e) => {
+            const chip = e.target.closest(".chip-btn");
+            if (chip && chip.dataset.query) {
+                executeNlpQuery(chip.dataset.query);
+            }
+        });
+    }
+
+    // 시각화 차트 보기 버튼 클릭 시 결과 섹션으로 연동
+    nlpVisualizeBtn.addEventListener("click", () => {
+        if (!lastNlpResult || !lastNlpResult.calculation_result) {
+            alert("먼저 자연어 질문을 실행해주세요.");
+            return;
+        }
+
+        const calc = lastNlpResult.calculation_result;
+        lastCalculationResult = calc;
+        logEvent("VISUALIZE", `자연어 질문 기반 차트 시각화 활성화 (도구: ${calc.tool})`);
+
+        // 메타 배너 갱신
+        metaTool.textContent = `도구: ${calc.tool}`;
+        metaRef.textContent = `기준시점: ${calc.reference_period || 'N/A'}`;
+        metaRowsUsed.textContent = `사용 관측치: ${calc.rows_used || '-'}개`;
+        metaRowsExcluded.textContent = `제외 행: ${calc.rows_excluded || '0'}개 (${calc.exclusion_reasons || '없음'})`;
+        cautionText.textContent = calc.caution || "없음";
+
+        // 차트 및 테이블 렌더링
+        renderChart(calc);
+        renderCalcTable(calc);
+
+        // 결과 및 AI 설명 섹션 활성화
+        resultSection.style.display = "block";
+        explainSection.style.display = "block";
+        resultSection.scrollIntoView({ behavior: "smooth" });
+    });
+
+    // ==========================================
+    // 4단계: AI 추천 분석 (/suggest)
     // ==========================================
     requestSuggestBtn.addEventListener("click", async () => {
         if (!inspectionData) return;
@@ -424,7 +532,10 @@ document.addEventListener("DOMContentLoaded", () => {
             chartData.datasets = [{
                 label: `인터넷 사용률 (%) - ${res.reference_period}년`,
                 data: combined.map(item => item.value),
-                backgroundColor: combined.map((_, i) => i < topItems.length ? "#2563eb" : "#f87171")
+                backgroundColor: combined.map((item, i) => {
+                    if (item.is_target) return "#f59e0b"; // 비교 대상 국가(대한민국 등) 오렌지/골드 강조
+                    return i < topItems.length ? "#2563eb" : "#f87171";
+                })
             }];
 
         } else if (tool === "trend_line") {
@@ -528,11 +639,30 @@ document.addEventListener("DOMContentLoaded", () => {
         calcThead.innerHTML = "";
         calcTbody.innerHTML = "";
 
-        if (res.top_n && res.bottom_n) {
+        if (res.top_n || res.bottom_n) {
             calcThead.innerHTML = `<tr><th>구분</th><th>순위</th><th>국가/지역</th><th>인터넷 사용률 (%)</th></tr>`;
-            const topRows = res.top_n.map(item => `<tr><td>상위 Top</td><td>${item.rank}</td><td>${escapeHtml(item.label)}</td><td>${item.value}%</td></tr>`).join("");
-            const bottomRows = res.bottom_n.map(item => `<tr><td>하위 Bottom</td><td>${item.rank}</td><td>${escapeHtml(item.label)}</td><td>${item.value}%</td></tr>`).join("");
-            calcTbody.innerHTML = topRows + bottomRows;
+            let rowsHtml = "";
+            if (res.top_n) {
+                rowsHtml += res.top_n.map(item => {
+                    const rowStyle = item.is_target ? ' style="background-color: #fef3c7; font-weight: bold;"' : '';
+                    const badge = item.is_target ? ' <span style="background:#f59e0b; color:#ffffff; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:6px;">📍 비교대상</span>' : '';
+                    return `<tr${rowStyle}><td>상위 Top</td><td>${item.rank || '-'}</td><td>${escapeHtml(item.label)}${badge}</td><td>${item.value}%</td></tr>`;
+                }).join("");
+            }
+            if (res.bottom_n) {
+                rowsHtml += res.bottom_n.map(item => {
+                    const rowStyle = item.is_target ? ' style="background-color: #fef3c7; font-weight: bold;"' : '';
+                    const badge = item.is_target ? ' <span style="background:#f59e0b; color:#ffffff; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:6px;">📍 비교대상</span>' : '';
+                    return `<tr${rowStyle}><td>하위 Bottom</td><td>${item.rank || '-'}</td><td>${escapeHtml(item.label)}${badge}</td><td>${item.value}%</td></tr>`;
+                }).join("");
+            }
+            calcTbody.innerHTML = rowsHtml;
+        } else if (res.chart_bars) {
+            calcThead.innerHTML = `<tr><th>비교 대상</th><th>수치 (%)</th><th>구분</th></tr>`;
+            calcTbody.innerHTML = res.chart_bars.map(b => {
+                const rowStyle = b.is_target ? ' style="background-color: #fef3c7; font-weight: bold;"' : '';
+                return `<tr${rowStyle}><td>${escapeHtml(b.label)}</td><td>${b.value}%</td><td>${b.is_target ? '타깃 국가' : '기준치'}</td></tr>`;
+            }).join("");
         } else if (res.groups) {
             calcThead.innerHTML = `<tr><th>그룹명</th><th>포함 국가 수</th><th>평균 (%)</th><th>중앙값 (%)</th><th>최소</th><th>최대</th></tr>`;
             calcTbody.innerHTML = res.groups.map(g => `<tr><td>${escapeHtml(g.group)}</td><td>${g.count}</td><td>${g.mean}%</td><td>${g.median}%</td><td>${g.min}%</td><td>${g.max}%</td></tr>`).join("");
