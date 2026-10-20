@@ -2,6 +2,7 @@ import io
 import os
 import re
 import csv
+import sys
 import json
 import logging
 import inspect
@@ -17,12 +18,30 @@ import tools
 # 환경변수 로드
 load_dotenv()
 
-# 로깅 설정 (print() 대신 logging 모듈 사용)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-logger = logging.getLogger(__name__)
+# Windows 콘솔 및 로거의 UTF-8 입출력 강제 설정
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+# 로깅 포맷터 및 핸들러 설정 (콘솔 + app.log 파일)
+log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(log_formatter)
+
+file_handler = logging.FileHandler("app.log", encoding="utf-8")
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(log_formatter)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers = [console_handler, file_handler]
+
+logger = logging.getLogger("data-insight-builder")
 
 app = Flask(__name__)
 
@@ -419,9 +438,23 @@ def query_data():
 
     try:
         calc_result = tool_func(df, **valid_args)
+        logger.info(f"[CALC_SUCCESS] 도구 '{tool_name}' 연산 성공 (사용 행 수: {calc_result.get('rows_used')})")
     except Exception as e:
         logger.error(f"[ERROR] 자연어 매핑 도구 실행 실패: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": f"데이터 분석 중 오류 발생: {str(e)}"}), 500
+
+    # top_bottom_n의 경우 질문 의도에 맞춰 불필요한 반대편 목록(예: 상위만 물었는데 하위 10개국 강제 노출) 제거
+    if tool_name == "top_bottom_n" and "result" in calc_result:
+        q_lower = question.lower()
+        has_bottom = any(k in q_lower for k in ["하위", "낮은", "bottom", "꼴찌", "최하위"])
+        has_top = any(k in q_lower for k in ["상위", "높은", "top", "1~", "1등", "순위", "1위"])
+
+        if has_bottom and not has_top:
+            calc_result["result"]["top_n"] = []
+            logger.info("[FILTER] 질문 의도에 맞춰 하위(Bottom) 목록만 표시")
+        elif has_top and not has_bottom:
+            calc_result["result"]["bottom_n"] = []
+            logger.info("[FILTER] 질문 의도에 맞춰 상위(Top) 목록만 표시")
 
     # 3. 추가 비교 대상 국가(미국, 한국 등) 정보 보강 및 차트 연동
     if compare_items:
@@ -446,28 +479,34 @@ def query_data():
                 )
                 extra = comp_res.get("result", {})
                 extra_comparisons.append(extra)
+                logger.info(f"[COMPARE_RESOLVE] 비교 국가 '{official_name}' ({disp_name}) 순위: {extra.get('target_rank')}위, 값: {extra.get('target_value')}%")
 
                 # top_bottom_n 인 경우 차트에서 함께 볼 수 있도록 top_n 또는 bottom_n에 타깃 지정
-                if tool_name == "top_bottom_n" and "top_n" in calc_result.get("result", {}):
-                    # 1) 이미 top_n에 존재하는지 확인
-                    matched_in_top = next((item for item in calc_result["result"]["top_n"] if item.get("label") == official_name), None)
+                if tool_name == "top_bottom_n" and "result" in calc_result:
+                    top_list = calc_result["result"].get("top_n", [])
+                    bot_list = calc_result["result"].get("bottom_n", [])
+
+                    matched_in_top = next((item for item in top_list if item.get("label") == official_name), None)
                     if matched_in_top:
                         matched_in_top["is_target"] = True
                         matched_in_top["label"] = f"{official_name} ({disp_name} 📍)" if disp_name else f"{official_name} (📍)"
                     else:
-                        # 2) bottom_n에 존재하는지 확인
-                        matched_in_bottom = next((item for item in calc_result["result"].get("bottom_n", []) if item.get("label") == official_name), None)
+                        matched_in_bottom = next((item for item in bot_list if item.get("label") == official_name), None)
                         if matched_in_bottom:
                             matched_in_bottom["is_target"] = True
                             matched_in_bottom["label"] = f"{official_name} ({disp_name} 📍)" if disp_name else f"{official_name} (📍)"
                         else:
-                            # 3) 상/하위에 모두 없다면 top_n 뒤에 비교대상으로 추가
-                            calc_result["result"]["top_n"].append({
+                            # 목록에 없다면 top_n(또는 bottom_n) 끝에 타깃으로 추가
+                            target_entry = {
                                 "rank": extra.get("target_rank"),
                                 "label": f"{official_name} ({disp_name} 📍)" if disp_name else f"{official_name} (📍)",
                                 "value": extra.get("target_value"),
                                 "is_target": True
-                            })
+                            }
+                            if "top_n" in calc_result["result"] and (calc_result["result"]["top_n"] or not bot_list):
+                                calc_result["result"]["top_n"].append(target_entry)
+                            elif "bottom_n" in calc_result["result"]:
+                                calc_result["result"]["bottom_n"].append(target_entry)
             except Exception as ce:
                 logger.warning(f"[WARN] 추가 비교 국가({official_name}) 연산 생략: {str(ce)}")
 
@@ -920,6 +959,21 @@ def followup_chat():
         "question": question,
         "answer": answer_text
     }), 200
+
+# ==========================================
+# GET /api/logs (서버 최근 로그 조회 API)
+# ==========================================
+@app.route("/api/logs", methods=["GET"])
+def get_recent_logs():
+    """최근 서버 실행 로그 목록 반환"""
+    try:
+        if os.path.exists("app.log"):
+            with open("app.log", "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                return jsonify({"status": "success", "logs": [l.strip() for l in lines[-100:]]})
+        return jsonify({"status": "success", "logs": []})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"

@@ -564,33 +564,38 @@ document.addEventListener("DOMContentLoaded", () => {
                 targetLegendLabel = `비교 대상 국가 (${names.join(', ')})`;
             }
 
-            // 3개 데이터셋 분리 (상위 Top 국가 / 비교 대상 / 하위 Bottom 국가)
-            chartData.datasets = [
-                {
+            // 3개 데이터셋 분리 (상위 Top 국가 / 비교 대상 / 하위 Bottom 국가 - 실제 존재하는 항목만 활성화)
+            chartData.datasets = [];
+            if (topItems.length > 0) {
+                chartData.datasets.push({
                     label: `상위 Top 국가 (1~${topItems.length}위)`,
                     data: allItems.map(item => topItems.includes(item) ? item.value : null),
                     backgroundColor: "#2563eb",
                     borderColor: "#1d4ed8",
                     borderWidth: 1,
                     borderRadius: 4
-                },
-                {
+                });
+            }
+            if (targetItems.length > 0) {
+                chartData.datasets.push({
                     label: targetLegendLabel,
                     data: allItems.map(item => item.is_target ? item.value : null),
                     backgroundColor: "#f59e0b",
                     borderColor: "#d97706",
                     borderWidth: 2,
                     borderRadius: 4
-                },
-                {
+                });
+            }
+            if (bottomItems.length > 0) {
+                chartData.datasets.push({
                     label: `하위 Bottom 국가 (하위 1~${bottomItems.length}위)`,
                     data: allItems.map(item => bottomItems.includes(item) ? item.value : null),
                     backgroundColor: "#ef4444",
                     borderColor: "#dc2626",
                     borderWidth: 1,
                     borderRadius: 4
-                }
-            ];
+                });
+            }
 
             chartOptions.scales = {
                 x: {
@@ -803,6 +808,32 @@ document.addEventListener("DOMContentLoaded", () => {
                 const rowStyle = b.is_target ? ' style="background-color: #fef3c7; font-weight: bold;"' : '';
                 return `<tr${rowStyle}><td>${escapeHtml(b.label)}</td><td>${b.value}%</td><td>${b.is_target ? '타깃 국가' : '기준치'}</td></tr>`;
             }).join("");
+        } else if (res.series && res.series.length > 0) {
+            const years = res.series[0].points.map(p => p.year);
+            calcThead.innerHTML = `<tr><th>국가/항목</th>${years.map(y => `<th>${y}년</th>`).join("")}</tr>`;
+            calcTbody.innerHTML = res.series.map(s => {
+                return `<tr><td><strong>${escapeHtml(s.label)}</strong></td>${s.points.map(p => `<td>${p.value !== null ? p.value + '%' : '-'}</td>`).join("")}</tr>`;
+            }).join("");
+        } else if (res.top_increases) {
+            calcThead.innerHTML = `<tr><th>구분</th><th>순위</th><th>국가/지역</th><th>초기 (${res.base_period || '-'})</th><th>최근 (${res.reference_period || '-'})</th><th>변화량 (%p)</th></tr>`;
+            const incRows = (res.top_increases || []).map(i => {
+                return `<tr><td>상승 Top</td><td>${i.rank}</td><td>${escapeHtml(i.label)}</td><td>${i.base_val}%</td><td>${i.ref_val}%</td><td style="color:#059669; font-weight:bold;">+${i.diff_pct_points}%p</td></tr>`;
+            }).join("");
+            const decRows = (res.top_decreases || []).map(d => {
+                return `<tr><td>하락/정체</td><td>${d.rank}</td><td>${escapeHtml(d.label)}</td><td>${d.base_val}%</td><td>${d.ref_val}%</td><td style="color:#dc2626; font-weight:bold;">${d.diff_pct_points}%p</td></tr>`;
+            }).join("");
+            calcTbody.innerHTML = incRows + decRows;
+        } else if (res.mean !== undefined && res.median !== undefined) {
+            calcThead.innerHTML = `<tr><th>통계 지표</th><th>수치</th></tr>`;
+            calcTbody.innerHTML = `
+                <tr><td>평균 (Mean)</td><td>${res.mean}%</td></tr>
+                <tr><td>중앙값 (Median)</td><td>${res.median}%</td></tr>
+                <tr><td>최솟값 (Min)</td><td>${res.min}%</td></tr>
+                <tr><td>최댓값 (Max)</td><td>${res.max}%</td></tr>
+                <tr><td>표준편차 (Std Dev)</td><td>${res.std || '-'}</td></tr>
+                <tr><td>하위 25% (Q1)</td><td>${res.q25 || '-'}%</td></tr>
+                <tr><td>상위 25% (Q3)</td><td>${res.q75 || '-'}%</td></tr>
+            `;
         } else if (res.groups) {
             calcThead.innerHTML = `<tr><th>그룹명</th><th>포함 국가 수</th><th>평균 (%)</th><th>중앙값 (%)</th><th>최소</th><th>최대</th></tr>`;
             calcTbody.innerHTML = res.groups.map(g => `<tr><td>${escapeHtml(g.group)}</td><td>${g.count}</td><td>${g.mean}%</td><td>${g.median}%</td><td>${g.min}%</td><td>${g.max}%</td></tr>`).join("");
@@ -1031,10 +1062,50 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // 로그 콘솔 접기 토글
-    toggleLogBtn.addEventListener("click", () => {
+    const logToggleIcon = document.getElementById("logToggleIcon");
+    const toggleAction = () => {
         const isHidden = logBody.style.display === "none";
         logBody.style.display = isHidden ? "block" : "none";
-        document.getElementById("logToggleIcon").textContent = isHidden ? "▼" : "▲";
-    });
+        if (logToggleIcon) logToggleIcon.textContent = isHidden ? "▼" : "▲";
+    };
+    if (toggleLogBtn) toggleLogBtn.addEventListener("click", toggleAction);
+    if (logToggleIcon) logToggleIcon.addEventListener("click", toggleAction);
+
+    // 서버 로그 동기화 버튼
+    const fetchServerLogsBtn = document.getElementById("fetchServerLogsBtn");
+    if (fetchServerLogsBtn) {
+        fetchServerLogsBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            fetchServerLogsBtn.disabled = true;
+            fetchServerLogsBtn.textContent = "가져오는 중...";
+            try {
+                const res = await fetch("/api/logs");
+                const data = await res.json();
+                if (data.status === "success" && data.logs) {
+                    logEvent("SERVER", `--- 최신 서버 로그 (${data.logs.length}줄) ---`);
+                    data.logs.slice(-15).forEach(line => {
+                        logEvent("SERVER", line);
+                    });
+                }
+            } catch (err) {
+                logEvent("ERROR", `서버 로그 동기화 실패: ${err.message}`);
+            } finally {
+                fetchServerLogsBtn.disabled = false;
+                fetchServerLogsBtn.textContent = "🔄 서버 로그 동기화";
+            }
+        });
+    }
+
+    // 로그 비우기 버튼
+    const clearLogsBtn = document.getElementById("clearLogsBtn");
+    if (clearLogsBtn) {
+        clearLogsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (logConsole) {
+                logConsole.innerHTML = "";
+                logEvent("PAGE", "로그 콘솔 초기화됨");
+            }
+        });
+    }
 });
 

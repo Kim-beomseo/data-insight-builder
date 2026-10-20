@@ -645,6 +645,15 @@ body {
 .log-tag.SUGGEST { color: #a78bfa; }
 .log-tag.RUN { color: #f472b6; }
 .log-tag.CHART { color: #60a5fa; }
+.log-tag.NLP_QUERY { color: #c084fc; }
+.log-tag.VISUALIZE { color: #2dd4bf; }
+.log-tag.SERVER { color: #fbbf24; }
+.log-tag.EXPLAIN { color: #f472b6; }
+.log-tag.ERROR { color: #f87171; }
+
+.log-body {
+    display: block;
+}
 /* ==========================================
    후속 질문 대화창 스타일
    ========================================== */

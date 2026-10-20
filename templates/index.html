@@ -349,11 +349,15 @@
             </div>
         </section>
 
-        <!-- 실시간 프론트엔드 콘솔 로그 패널 -->
+        <!-- 실시간 시스템 및 콘솔 로그 패널 -->
         <section class="card log-card">
-            <div class="log-header" id="toggleLogBtn">
-                <span>🖥️ Frontend Console Log Activity</span>
-                <span id="logToggleIcon">▼</span>
+            <div class="log-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span id="toggleLogBtn" style="cursor: pointer;">🖥️ 시스템 & 콘솔 로그 (Activity Log)</span>
+                    <button id="fetchServerLogsBtn" style="padding: 3px 8px; font-size: 11px; background: #334155; color: #f8fafc; border: 1px solid #475569; border-radius: 4px; cursor: pointer;">🔄 서버 로그 동기화</button>
+                    <button id="clearLogsBtn" style="padding: 3px 8px; font-size: 11px; background: #334155; color: #f8fafc; border: 1px solid #475569; border-radius: 4px; cursor: pointer;">🧹 비우기</button>
+                </div>
+                <span id="logToggleIcon" style="cursor: pointer;">▼</span>
             </div>
             <div class="log-body" id="logBody">
                 <div class="log-console" id="logConsole"></div>
