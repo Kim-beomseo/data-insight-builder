@@ -220,6 +220,80 @@ def inspect_file():
         "warnings": warnings
     }), 200
 
+COUNTRY_ALIASES = {
+    "한국": ("Korea, Rep.", "대한민국"),
+    "대한민국": ("Korea, Rep.", "대한민국"),
+    "남한": ("Korea, Rep.", "대한민국"),
+    "korea": ("Korea, Rep.", "대한민국"),
+    "south korea": ("Korea, Rep.", "대한민국"),
+    "korea, rep.": ("Korea, Rep.", "대한민국"),
+    "korea, rep": ("Korea, Rep.", "대한민국"),
+    "미국": ("United States", "미국"),
+    "usa": ("United States", "미국"),
+    "united states": ("United States", "미국"),
+    "us": ("United States", "미국"),
+    "일본": ("Japan", "일본"),
+    "japan": ("Japan", "일본"),
+    "중국": ("China", "중국"),
+    "china": ("China", "중국"),
+    "영국": ("United Kingdom", "영국"),
+    "uk": ("United Kingdom", "영국"),
+    "united kingdom": ("United Kingdom", "영국"),
+    "독일": ("Germany", "독일"),
+    "germany": ("Germany", "독일"),
+    "프랑스": ("France", "프랑스"),
+    "france": ("France", "프랑스"),
+    "러시아": ("Russian Federation", "러시아"),
+    "russia": ("Russian Federation", "러시아"),
+    "인도": ("India", "인도"),
+    "india": ("India", "인도"),
+    "캐나다": ("Canada", "캐나다"),
+    "canada": ("Canada", "캐나다"),
+    "호주": ("Australia", "호주"),
+    "australia": ("Australia", "호주"),
+    "브라질": ("Brazil", "브라질"),
+    "brazil": ("Brazil", "브라질"),
+    "이탈리아": ("Italy", "이탈리아"),
+    "italy": ("Italy", "이탈리아"),
+    "스페인": ("Spain", "스페인"),
+    "spain": ("Spain", "스페인"),
+    "대만": ("Taiwan, China", "대만"),
+    "베트남": ("Viet Nam", "베트남"),
+    "싱가포르": ("Singapore", "싱가포르")
+}
+
+def resolve_country_name(query_name, df, id_col=None):
+    if not query_name:
+        return None, None
+    if id_col is None:
+        id_col = df.columns[0]
+    
+    clean_q = str(query_name).strip()
+    lower_q = clean_q.lower()
+
+    if lower_q in COUNTRY_ALIASES:
+        official_name, disp = COUNTRY_ALIASES[lower_q]
+        if official_name in df[id_col].values:
+            return official_name, disp
+
+    # Exact match in DataFrame
+    if clean_q in df[id_col].values:
+        return clean_q, clean_q
+
+    # Case-insensitive match in DataFrame
+    matches = df[df[id_col].astype(str).str.lower() == lower_q]
+    if not matches.empty:
+        matched_name = matches.iloc[0][id_col]
+        return matched_name, matched_name
+
+    # Partial contains match
+    partial = df[df[id_col].astype(str).str.contains(clean_q, case=False, na=False)]
+    if not partial.empty:
+        matched_name = partial.iloc[0][id_col]
+        return matched_name, clean_q
+
+    return clean_q, clean_q
+
 # ==========================================
 # POST /query (자연어 질문 분석 엔드포인트)
 # ==========================================
@@ -274,7 +348,10 @@ def query_data():
 [데이터셋 정보]
 - 국가 열: {df.columns[0]}
 - 연도 열: {year_cols[0]} ~ {year_cols[-1]} (권장: {rec_year})
-- 한국의 영문 명칭은 'Korea, Rep.' 입니다.
+- 주요 국가 영문 공식 명칭 예시:
+  * 한국: 'Korea, Rep.'
+  * 미국: 'United States'
+  * 일본: 'Japan', 중국: 'China', 영국: 'United Kingdom', 독일: 'Germany', 프랑스: 'France'
 
 [사용자 질문]
 "{question}"
@@ -287,9 +364,11 @@ def query_data():
     "n": 10,
     "exclude_aggregates": true
   }},
-  "compare_item": "Korea, Rep."
+  "compare_items": [
+    {{"name": "United States", "display": "미국"}}
+  ]
 }}
-(참고: 특정 국가와의 비교나 위치를 함께 물어본 경우 compare_item에 'Korea, Rep.' 등을 표기)
+(참고: 특정 국가와의 비교나 위치를 질문한 경우 compare_items 목록에 영문 공식명칭(name)과 한글 표기(display)를 작성. 비교 국가가 없으면 빈 리스트 [] 작성)
 """
 
     client = genai.Client(api_key=api_key)
@@ -302,12 +381,25 @@ def query_data():
         plan_json = json.loads(plan_res.text.strip())
         tool_name = plan_json.get("tool", "top_bottom_n")
         params = plan_json.get("params", {})
-        compare_item = plan_json.get("compare_item")
+        
+        # compare_items 파싱 (단일 객체, 문자열, 리스트 모두 유연하게 처리)
+        raw_compare = plan_json.get("compare_items") or plan_json.get("compare_item")
+        compare_items = []
+        if isinstance(raw_compare, list):
+            for it in raw_compare:
+                if isinstance(it, dict):
+                    compare_items.append({"name": it.get("name") or it.get("country"), "display": it.get("display") or it.get("display_name") or it.get("name")})
+                elif isinstance(it, str):
+                    compare_items.append({"name": it, "display": it})
+        elif isinstance(raw_compare, dict):
+            compare_items.append({"name": raw_compare.get("name") or raw_compare.get("country"), "display": raw_compare.get("display") or raw_compare.get("display_name") or raw_compare.get("name")})
+        elif isinstance(raw_compare, str) and raw_compare.strip():
+            compare_items.append({"name": raw_compare.strip(), "display": plan_json.get("target_display_name") or raw_compare.strip()})
     except Exception as e:
-        logger.warning(f"[AI] 계획 파싱 실패, 기본 top_bottom_n 적용: {str(e)}")
+        logger.warning(f"[AI] 계획 파싱 실패, 기본 처리: {str(e)}")
         tool_name = "top_bottom_n"
         params = {"reference_period": rec_year, "n": 10, "exclude_aggregates": True}
-        compare_item = "Korea, Rep."
+        compare_items = []
 
     if tool_name not in tools.TOOL_REGISTRY:
         tool_name = "top_bottom_n"
@@ -319,36 +411,69 @@ def query_data():
     if tool_name in REQUIRES_REFERENCE_PERIOD and "reference_period" not in valid_args:
         valid_args["reference_period"] = rec_year
 
+    # trend_line이나 compare_one_vs_all의 국가명 매핑 보정
+    if tool_name == "trend_line" and "items" in valid_args and isinstance(valid_args["items"], list):
+        valid_args["items"] = [resolve_country_name(c, df)[0] for c in valid_args["items"]]
+    elif tool_name == "compare_one_vs_all" and "item" in valid_args:
+        valid_args["item"] = resolve_country_name(valid_args["item"], df)[0]
+
     try:
         calc_result = tool_func(df, **valid_args)
     except Exception as e:
         logger.error(f"[ERROR] 자연어 매핑 도구 실행 실패: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": f"데이터 분석 중 오류 발생: {str(e)}"}), 500
 
-    # 3. 추가 비교 대상(예: 대한민국) 정보 보강
-    if compare_item:
-        try:
-            comp_res = tools.compare_one_vs_all(
-                df, 
-                reference_period=valid_args.get("reference_period", rec_year), 
-                item=compare_item, 
-                exclude_aggregates=True
-            )
-            extra_comparison = comp_res.get("result", {})
-            calc_result["extra_comparison"] = extra_comparison
-            
-            # top_bottom_n 인 경우 차트에서 함께 볼 수 있도록 top_n에 타깃 국가 추가
-            if tool_name == "top_bottom_n" and "top_n" in calc_result.get("result", {}):
-                exists = any(item.get("label") == compare_item for item in calc_result["result"]["top_n"])
-                if not exists:
-                    calc_result["result"]["top_n"].append({
-                        "rank": extra_comparison.get("target_rank"),
-                        "label": f"{compare_item} (대한민국 📍)",
-                        "value": extra_comparison.get("target_value"),
-                        "is_target": True
-                    })
-        except Exception as ce:
-            logger.warning(f"[WARN] 추가 비교 국가 연산 생략: {str(ce)}")
+    # 3. 추가 비교 대상 국가(미국, 한국 등) 정보 보강 및 차트 연동
+    if compare_items:
+        extra_comparisons = []
+        for c_info in compare_items:
+            raw_c_name = c_info.get("name")
+            official_name, disp_name = resolve_country_name(raw_c_name, df)
+            if not official_name:
+                continue
+
+            # 사용자 지정 표시명이 있으면 우선 사용
+            user_disp = c_info.get("display")
+            if user_disp and user_disp != raw_c_name:
+                disp_name = user_disp
+
+            try:
+                comp_res = tools.compare_one_vs_all(
+                    df, 
+                    reference_period=valid_args.get("reference_period", rec_year), 
+                    item=official_name, 
+                    exclude_aggregates=True
+                )
+                extra = comp_res.get("result", {})
+                extra_comparisons.append(extra)
+
+                # top_bottom_n 인 경우 차트에서 함께 볼 수 있도록 top_n 또는 bottom_n에 타깃 지정
+                if tool_name == "top_bottom_n" and "top_n" in calc_result.get("result", {}):
+                    # 1) 이미 top_n에 존재하는지 확인
+                    matched_in_top = next((item for item in calc_result["result"]["top_n"] if item.get("label") == official_name), None)
+                    if matched_in_top:
+                        matched_in_top["is_target"] = True
+                        matched_in_top["label"] = f"{official_name} ({disp_name} 📍)" if disp_name else f"{official_name} (📍)"
+                    else:
+                        # 2) bottom_n에 존재하는지 확인
+                        matched_in_bottom = next((item for item in calc_result["result"].get("bottom_n", []) if item.get("label") == official_name), None)
+                        if matched_in_bottom:
+                            matched_in_bottom["is_target"] = True
+                            matched_in_bottom["label"] = f"{official_name} ({disp_name} 📍)" if disp_name else f"{official_name} (📍)"
+                        else:
+                            # 3) 상/하위에 모두 없다면 top_n 뒤에 비교대상으로 추가
+                            calc_result["result"]["top_n"].append({
+                                "rank": extra.get("target_rank"),
+                                "label": f"{official_name} ({disp_name} 📍)" if disp_name else f"{official_name} (📍)",
+                                "value": extra.get("target_value"),
+                                "is_target": True
+                            })
+            except Exception as ce:
+                logger.warning(f"[WARN] 추가 비교 국가({official_name}) 연산 생략: {str(ce)}")
+
+        if extra_comparisons:
+            calc_result["extra_comparison"] = extra_comparisons[0]
+            calc_result["extra_comparisons"] = extra_comparisons
 
     # 4. 정확한 계산 결과를 기반으로 Gemini 자연어 답변 생성
     answer_prompt = f"""
@@ -367,7 +492,7 @@ def query_data():
 
 [답변 가이드]
 1. 사용자의 질문에 직접적으로 명쾌한 결론을 먼저 제시하세요.
-2. 상위 국가들의 순위와 정확한 수치(% 단위)를 나열하고, 비교 대상 국가(예: 대한민국)의 정확한 순위(예: 188개국 중 13위)와 수치(97.90%)를 명확히 밝히세요.
+2. 질문에서 비교를 요청한 특정 대상 국가(예: 미국, 대한민국 등)가 있다면 해당 국가의 정확한 순위와 통계 수치(% 단위)를 명확하게 밝히세요.
 3. 숫자를 임의로 바꾸거나 추정하지 말고, 제공된 계산 결과의 숫자만 인용하세요.
 4. 마크다운 형식(글머리 기호, 볼드체)을 활용하여 가독성 높게 작성하세요.
 """

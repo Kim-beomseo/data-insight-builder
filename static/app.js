@@ -543,10 +543,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 chartWrapper.style.height = `${dynamicHeight}px`;
             }
 
-            // 라벨 포맷: 순위 및 구분([상위 N위], [13위] 대한민국, [하위 N위]) 명시
+            // 라벨 포맷: 순위 및 구분([상위 N위], [순위] 비교국가, [하위 N위]) 명시
             chartData.labels = allItems.map(item => {
                 if (item.is_target) {
-                    return `⭐ [${item.rank || 13}위] ${item.label}`;
+                    return `⭐ [${item.rank || '-'}위] ${item.label}`;
                 }
                 if (topItems.includes(item)) {
                     return `[상위 ${item.rank}위] ${item.label}`;
@@ -554,7 +554,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 return `[하위 ${item.rank}위] ${item.label}`;
             });
 
-            // 3개 데이터셋 분리 (상위 Top 국가 / 대한민국 비교 / 하위 Bottom 국가)
+            // 비교 대상 국가들의 이름 추출 (예: "미국", "대한민국", "일본" 등)
+            let targetLegendLabel = "비교 대상 국가";
+            if (targetItems.length > 0) {
+                const names = targetItems.map(t => {
+                    const match = t.label.match(/\((.*?)\s*📍?\)/);
+                    return match ? match[1].replace('📍', '').trim() : t.label;
+                });
+                targetLegendLabel = `비교 대상 국가 (${names.join(', ')})`;
+            }
+
+            // 3개 데이터셋 분리 (상위 Top 국가 / 비교 대상 / 하위 Bottom 국가)
             chartData.datasets = [
                 {
                     label: `상위 Top 국가 (1~${topItems.length}위)`,
@@ -565,7 +575,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     borderRadius: 4
                 },
                 {
-                    label: "비교 대상 국가 (대한민국)",
+                    label: targetLegendLabel,
                     data: allItems.map(item => item.is_target ? item.value : null),
                     backgroundColor: "#f59e0b",
                     borderColor: "#d97706",
@@ -602,17 +612,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 y: {
                     stacked: true,
                     ticks: {
-                        autoSkip: false, // 21개 국가 모두 절대 생략 없이 100% 온전하게 표시!
+                        autoSkip: false, // 모든 국가 절대 생략 없이 100% 온전하게 표시!
                         font: (ctx) => {
-                            const lbl = chartData.labels[ctx.index] || "";
+                            const isTarget = allItems[ctx.index] && allItems[ctx.index].is_target;
                             return {
-                                size: lbl.includes("대한민국") ? 13 : 11,
-                                weight: lbl.includes("대한민국") ? "bold" : "normal"
+                                size: isTarget ? 13 : 11,
+                                weight: isTarget ? "bold" : "normal"
                             };
                         },
                         color: (ctx) => {
-                            const lbl = chartData.labels[ctx.index] || "";
-                            return lbl.includes("대한민국") ? "#b45309" : "#334155";
+                            const isTarget = allItems[ctx.index] && allItems[ctx.index].is_target;
+                            return isTarget ? "#b45309" : "#334155";
                         }
                     },
                     grid: {
@@ -774,14 +784,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 rowsHtml += res.top_n.map(item => {
                     const rowStyle = item.is_target ? ' style="background-color: #fef3c7; font-weight: bold;"' : '';
                     const badge = item.is_target ? ' <span style="background:#f59e0b; color:#ffffff; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:6px;">📍 비교대상</span>' : '';
-                    return `<tr${rowStyle}><td>상위 Top</td><td>${item.rank || '-'}</td><td>${escapeHtml(item.label)}${badge}</td><td>${item.value}%</td></tr>`;
+                    const catLabel = item.is_target ? '⭐ 비교 대상' : '상위 Top';
+                    return `<tr${rowStyle}><td>${catLabel}</td><td>${item.rank || '-'}</td><td>${escapeHtml(item.label)}${badge}</td><td>${item.value}%</td></tr>`;
                 }).join("");
             }
             if (res.bottom_n) {
                 rowsHtml += res.bottom_n.map(item => {
                     const rowStyle = item.is_target ? ' style="background-color: #fef3c7; font-weight: bold;"' : '';
                     const badge = item.is_target ? ' <span style="background:#f59e0b; color:#ffffff; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:6px;">📍 비교대상</span>' : '';
-                    return `<tr${rowStyle}><td>하위 Bottom</td><td>${item.rank || '-'}</td><td>${escapeHtml(item.label)}${badge}</td><td>${item.value}%</td></tr>`;
+                    const catLabel = item.is_target ? '⭐ 비교 대상' : '하위 Bottom';
+                    return `<tr${rowStyle}><td>${catLabel}</td><td>${item.rank || '-'}</td><td>${escapeHtml(item.label)}${badge}</td><td>${item.value}%</td></tr>`;
                 }).join("");
             }
             calcTbody.innerHTML = rowsHtml;
