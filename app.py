@@ -49,7 +49,9 @@ except Exception:
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
-root_logger.handlers = handlers
+for h in handlers:
+    if h not in root_logger.handlers:
+        root_logger.addHandler(h)
 
 logger = logging.getLogger("data-insight-builder")
 
