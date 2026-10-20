@@ -564,42 +564,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 targetLegendLabel = `비교 대상 국가 (${names.join(', ')})`;
             }
 
-            // 3개 데이터셋 분리 (상위 Top 국가 / 비교 대상 / 하위 Bottom 국가 - 실제 존재하는 항목만 활성화)
-            chartData.datasets = [];
-            if (topItems.length > 0) {
-                chartData.datasets.push({
-                    label: `상위 Top 국가 (1~${topItems.length}위)`,
-                    data: allItems.map(item => topItems.includes(item) ? item.value : null),
-                    backgroundColor: "#2563eb",
-                    borderColor: "#1d4ed8",
-                    borderWidth: 1,
-                    borderRadius: 4
-                });
-            }
-            if (targetItems.length > 0) {
-                chartData.datasets.push({
-                    label: targetLegendLabel,
-                    data: allItems.map(item => item.is_target ? item.value : null),
-                    backgroundColor: "#f59e0b",
-                    borderColor: "#d97706",
-                    borderWidth: 2,
-                    borderRadius: 4
-                });
-            }
-            if (bottomItems.length > 0) {
-                chartData.datasets.push({
-                    label: `하위 Bottom 국가 (하위 1~${bottomItems.length}위)`,
-                    data: allItems.map(item => bottomItems.includes(item) ? item.value : null),
-                    backgroundColor: "#ef4444",
-                    borderColor: "#dc2626",
-                    borderWidth: 1,
-                    borderRadius: 4
-                });
-            }
+            // 단일 데이터셋으로 모든 항목의 실제 수치 100% 온전하게 전달 (null 누락 및 스택 충돌 버그 방지)
+            chartData.datasets = [{
+                label: "인터넷 이용률 (%)",
+                data: allItems.map(item => item.value),
+                backgroundColor: allItems.map(item => {
+                    if (item.is_target) return "#f59e0b"; // 비교 대상 국가(오렌지/골드 강조)
+                    if (topItems.includes(item)) return "#2563eb"; // 상위 Top (파란색)
+                    return "#ef4444"; // 하위 Bottom (빨간색)
+                }),
+                borderColor: allItems.map(item => {
+                    if (item.is_target) return "#d97706";
+                    if (topItems.includes(item)) return "#1d4ed8";
+                    return "#dc2626";
+                }),
+                borderWidth: allItems.map(item => item.is_target ? 2.5 : 1),
+                borderRadius: 4
+            }];
 
             chartOptions.scales = {
                 x: {
-                    stacked: true,
                     beginAtZero: true,
                     max: 108,
                     title: {
@@ -615,7 +599,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 },
                 y: {
-                    stacked: true,
                     ticks: {
                         autoSkip: false, // 모든 국가 절대 생략 없이 100% 온전하게 표시!
                         font: (ctx) => {
@@ -644,14 +627,43 @@ document.addEventListener("DOMContentLoaded", () => {
                         usePointStyle: true,
                         boxWidth: 10,
                         font: { size: 12, weight: "bold" },
-                        padding: 14
+                        padding: 14,
+                        generateLabels: function() {
+                            const legends = [];
+                            if (topItems.length > 0) {
+                                legends.push({
+                                    text: `상위 Top 국가 (1~${topItems.length}위)`,
+                                    fillStyle: "#2563eb",
+                                    strokeStyle: "#1d4ed8",
+                                    lineWidth: 1
+                                });
+                            }
+                            if (targetItems.length > 0) {
+                                legends.push({
+                                    text: targetLegendLabel,
+                                    fillStyle: "#f59e0b",
+                                    strokeStyle: "#d97706",
+                                    lineWidth: 2
+                                });
+                            }
+                            if (bottomItems.length > 0) {
+                                legends.push({
+                                    text: `하위 Bottom 국가 (하위 1~${bottomItems.length}위)`,
+                                    fillStyle: "#ef4444",
+                                    strokeStyle: "#dc2626",
+                                    lineWidth: 1
+                                });
+                            }
+                            return legends;
+                        }
                     }
                 },
                 tooltip: {
                     callbacks: {
                         label: (ctx) => {
-                            if (ctx.raw === null || ctx.raw === undefined) return null;
-                            return ` ${ctx.dataset.label}: ${ctx.raw}%`;
+                            const item = allItems[ctx.dataIndex];
+                            const tag = item && item.is_target ? '비교 대상' : (topItems.includes(item) ? '상위 Top' : '하위 Bottom');
+                            return ` [${tag}] 인터넷 이용률: ${ctx.raw}%`;
                         }
                     }
                 }
@@ -663,19 +675,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 afterDatasetsDraw(chart) {
                     const c = chart.ctx;
                     c.save();
-                    chart.data.datasets.forEach((dataset, datasetIdx) => {
-                        const meta = chart.getDatasetMeta(datasetIdx);
+                    const meta = chart.getDatasetMeta(0);
+                    if (meta && meta.data) {
                         meta.data.forEach((bar, index) => {
-                            const val = dataset.data[index];
-                            if (val !== null && val !== undefined) {
-                                c.font = datasetIdx === 1 ? "bold 12px Pretendard, sans-serif" : "bold 11px Pretendard, sans-serif";
-                                c.fillStyle = datasetIdx === 1 ? "#b45309" : (datasetIdx === 0 ? "#1e40af" : "#991b1b");
+                            const item = allItems[index];
+                            if (item && item.value !== null && item.value !== undefined) {
+                                const isTarget = item.is_target;
+                                c.font = isTarget ? "bold 12px Pretendard, sans-serif" : "bold 11px Pretendard, sans-serif";
+                                c.fillStyle = isTarget ? "#b45309" : (topItems.includes(item) ? "#1e40af" : "#991b1b");
                                 c.textAlign = "left";
                                 c.textBaseline = "middle";
-                                c.fillText(`${Number(val).toFixed(2)}%`, bar.x + 6, bar.y);
+                                c.fillText(`${Number(item.value).toFixed(2)}%`, bar.x + 6, bar.y);
                             }
                         });
-                    });
+                    }
                     c.restore();
                 }
             });
