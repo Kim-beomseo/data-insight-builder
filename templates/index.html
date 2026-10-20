@@ -2,28 +2,123 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#2563eb">
     <title>AI Data Insight Builder</title>
+
+    <!-- PWA 지원 메타 태그 및 아이콘 -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DataInsight">
+
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Marked.js (Markdown 파서) CDN -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- 스타일시트 -->
-    <link rel="stylesheet" href="/static/style.css?v=20261020_02">
+    <link rel="stylesheet" href="/static/style.css?v=20261020_03">
 </head>
 <body>
+    <!-- 4자리 비밀번호 보안 잠금 오버레이 -->
+    <div id="authLockOverlay" class="auth-overlay">
+        <div class="auth-backdrop"></div>
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="auth-icon-wrap">
+                    <span class="auth-lock-icon">🔐</span>
+                </div>
+                <h2 class="auth-title">AI Data Insight Builder</h2>
+                <p class="auth-subtitle">시스템 접속을 위해 4자리 비밀번호를 입력해주세요</p>
+            </div>
+
+            <!-- 4자리 PIN 도트 표시기 -->
+            <div class="pin-dots-container" id="pinDots">
+                <div class="pin-dot" data-idx="0"></div>
+                <div class="pin-dot" data-idx="1"></div>
+                <div class="pin-dot" data-idx="2"></div>
+                <div class="pin-dot" data-idx="3"></div>
+            </div>
+
+            <!-- 상태 / 알림 메시지 -->
+            <div class="pin-feedback" id="pinFeedback">비밀번호 4자리를 입력하세요</div>
+
+            <!-- 모바일/터치 친화형 숫자 키패드 -->
+            <div class="auth-keypad">
+                <button type="button" class="key-btn" data-val="1">1</button>
+                <button type="button" class="key-btn" data-val="2">2</button>
+                <button type="button" class="key-btn" data-val="3">3</button>
+                <button type="button" class="key-btn" data-val="4">4</button>
+                <button type="button" class="key-btn" data-val="5">5</button>
+                <button type="button" class="key-btn" data-val="6">6</button>
+                <button type="button" class="key-btn" data-val="7">7</button>
+                <button type="button" class="key-btn" data-val="8">8</button>
+                <button type="button" class="key-btn" data-val="9">9</button>
+                <button type="button" class="key-btn key-fn" data-val="clear">C</button>
+                <button type="button" class="key-btn" data-val="0">0</button>
+                <button type="button" class="key-btn key-fn" data-val="back">⌫</button>
+            </div>
+
+            <!-- 데스크톱 물리 키보드 지원을 위한 숨겨진 인풋 -->
+            <input type="password" id="hiddenPinInput" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" style="position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0;">
+
+            <div class="auth-footer">
+                <span>💡 키보드 숫자 키 또는 화면 키패드로 입력 가능</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- iOS Safari 전용 PWA 설치 안내 모달 -->
+    <div id="iosInstallModal" class="ios-install-modal" style="display: none;">
+        <div class="ios-modal-backdrop" id="closeIosModalBackdrop"></div>
+        <div class="ios-modal-content">
+            <div class="ios-modal-header">
+                <div class="ios-modal-icon">📲</div>
+                <h3>홈 화면에 앱 설치하기</h3>
+                <button type="button" class="ios-modal-close" id="closeIosModalBtn">&times;</button>
+            </div>
+            <div class="ios-modal-body">
+                <p class="ios-lead">iOS Safari 브라우저에서는 아래 2단계로 앱을 홈 화면에 추가할 수 있습니다:</p>
+                <div class="ios-step-item">
+                    <span class="ios-step-num">1</span>
+                    <div>Safari 하단 툴바의 <strong>공유 버튼 ( <span style="font-size: 16px;">⎋</span> 또는 <span style="font-size: 16px;">⬆</span> )</strong>을 탭합니다.</div>
+                </div>
+                <div class="ios-step-item">
+                    <span class="ios-step-num">2</span>
+                    <div>공유 메뉴를 올려 <strong>'홈 화면에 추가 (Add to Home Screen)'</strong>를 누른 후 우측 상단 <strong>'추가'</strong>를 완료합니다.</div>
+                </div>
+            </div>
+            <button type="button" class="btn btn-primary btn-block" id="confirmIosModalBtn">확인했습니다</button>
+        </div>
+    </div>
+
     <header class="navbar">
         <div class="nav-container">
             <div class="logo-area">
-                <span class="logo-icon">📊</span>
+                <img src="/static/icons/icon-192.png" alt="Logo" class="logo-img" width="34" height="34">
                 <div>
                     <h1>AI Data Insight Builder</h1>
                     <p class="subtitle">공식 통계 CSV 자동 진단 · AI 추천 · 정밀 Pandas 분석</p>
                 </div>
             </div>
-            <div class="status-badge" id="serverStatusBadge">
-                <span class="status-dot"></span>
-                <span id="serverStatusText">서버 연결 확인 중...</span>
+            <div class="nav-actions">
+                <!-- PWA 앱 다운로드 / 설치 버튼 -->
+                <button id="pwaInstallBtn" class="btn btn-pwa-install" style="display: none;" title="PWA 앱으로 설치하기">
+                    <span class="pwa-icon">📲</span>
+                    <span class="pwa-text">앱 다운로드</span>
+                </button>
+                <!-- 화면 잠금 버튼 -->
+                <button id="lockScreenBtn" class="btn btn-lock" title="화면 잠금">
+                    <span>🔒</span>
+                    <span class="lock-text">잠금</span>
+                </button>
+                <div class="status-badge" id="serverStatusBadge">
+                    <span class="status-dot"></span>
+                    <span id="serverStatusText">서버 연결 확인 중...</span>
+                </div>
             </div>
         </div>
     </header>
@@ -370,6 +465,6 @@
     </footer>
 
     <!-- 프론트엔드 로직 스크립트 -->
-    <script src="/static/app.js?v=20261020_02"></script>
+    <script src="/static/app.js?v=20261020_03"></script>
 </body>
 </html>

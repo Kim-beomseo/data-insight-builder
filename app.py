@@ -8,7 +8,7 @@ import logging
 import inspect
 import numpy as np
 import pandas as pd
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_from_directory, make_response
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -107,6 +107,45 @@ def request_entity_too_large(error):
 def index():
     """메인 대시보드 웹 화면"""
     return render_template("index.html")
+
+@app.route("/manifest.json", methods=["GET"])
+def get_manifest():
+    """PWA 매니페스트 파일 제공"""
+    return send_from_directory(
+        os.path.join(BASE_DIR, "static"),
+        "manifest.json",
+        mimetype="application/manifest+json"
+    )
+
+@app.route("/sw.js", methods=["GET"])
+def get_service_worker():
+    """PWA 서비스 워커 파일 제공 (루트 스코프 적용)"""
+    resp = make_response(send_from_directory(
+        os.path.join(BASE_DIR, "static"),
+        "sw.js",
+        mimetype="application/javascript"
+    ))
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+@app.route("/api/auth/verify", methods=["POST"])
+def verify_auth_pin():
+    """4자리 비밀번호(기본: 0904) 검증 API"""
+    data = request.get_json(silent=True) or {}
+    pin = str(data.get("pin", "")).strip()
+    target_pin = os.getenv("APP_PASSWORD", "0904")
+    if pin == target_pin:
+        return jsonify({
+            "status": "success",
+            "authenticated": True,
+            "message": "인증 성공"
+        }), 200
+    return jsonify({
+        "status": "error",
+        "authenticated": False,
+        "message": "비밀번호가 올바르지 않습니다."
+    }), 401
 
 @app.route("/health", methods=["GET"])
 def health_check():

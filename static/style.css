@@ -1048,3 +1048,623 @@ body {
     color: var(--text-muted);
 }
 
+/* ==========================================
+   네비게이션 액션 영역 (PWA 설치 & 화면 잠금)
+   ========================================== */
+.nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: nowrap;
+}
+
+.logo-img {
+    border-radius: 8px;
+    display: block;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn-pwa-install {
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: #ffffff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 9999px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-pwa-install:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(37, 99, 235, 0.35);
+}
+
+.btn-pwa-install.installed {
+    background: #e2e8f0;
+    color: #475569;
+    box-shadow: none;
+    cursor: default;
+}
+
+.btn-lock {
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    padding: 7px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-lock:hover {
+    background: #e2e8f0;
+    color: #1e293b;
+}
+
+/* ==========================================
+   4자리 비밀번호 보안 잠금 오버레이
+   ========================================== */
+.auth-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.auth-overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.auth-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.auth-card {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 360px;
+    background: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 28px;
+    padding: 32px 24px 28px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    text-align: center;
+    color: #f8fafc;
+    animation: authPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes authPopIn {
+    from {
+        transform: scale(0.92);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.auth-icon-wrap {
+    width: 60px;
+    height: 60px;
+    margin: 0 auto 16px;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(124, 58, 237, 0.2));
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.auth-lock-icon {
+    font-size: 28px;
+}
+
+.auth-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
+}
+
+.auth-subtitle {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 24px;
+}
+
+/* PIN 도트 표시기 */
+.pin-dots-container {
+    display: flex;
+    justify-content: center;
+    gap: 18px;
+    margin-bottom: 14px;
+}
+
+.pin-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid #475569;
+    background: transparent;
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pin-dot.filled {
+    background: #3b82f6;
+    border-color: #60a5fa;
+    transform: scale(1.2);
+    box-shadow: 0 0 14px rgba(59, 130, 246, 0.7);
+}
+
+.pin-dots-container.shake {
+    animation: pinShake 0.4s ease-in-out;
+}
+
+.pin-dots-container.success .pin-dot {
+    background: #10b981;
+    border-color: #34d399;
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.8);
+}
+
+@keyframes pinShake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-12px); }
+    40%, 80% { transform: translateX(12px); }
+}
+
+.pin-feedback {
+    font-size: 12px;
+    color: #94a3b8;
+    min-height: 20px;
+    margin-bottom: 12px;
+    transition: color 0.2s;
+}
+
+.pin-feedback.error {
+    color: #f87171;
+    font-weight: 600;
+}
+
+.pin-feedback.success {
+    color: #34d399;
+    font-weight: 600;
+}
+
+/* 숫자 키패드 */
+.auth-keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    max-width: 270px;
+    margin: 0 auto 16px;
+}
+
+.key-btn {
+    height: 60px;
+    border-radius: 18px;
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #f8fafc;
+    font-size: 22px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.12s ease;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.key-btn:active {
+    transform: scale(0.92);
+    background: #334155;
+}
+
+.key-btn.key-fn {
+    font-size: 16px;
+    color: #94a3b8;
+    background: #0f172a;
+    border-color: rgba(255, 255, 255, 0.04);
+}
+
+.key-btn.key-fn:active {
+    background: #1e293b;
+    color: #ffffff;
+}
+
+.auth-footer {
+    font-size: 11px;
+    color: #64748b;
+}
+
+/* ==========================================
+   iOS Safari PWA 설치 안내 모달
+   ========================================== */
+.ios-install-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.ios-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+}
+
+.ios-modal-content {
+    position: relative;
+    z-index: 10;
+    background: #ffffff;
+    border-radius: 20px;
+    max-width: 380px;
+    width: 100%;
+    padding: 24px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+}
+
+.ios-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.ios-modal-header h3 {
+    font-size: 17px;
+    font-weight: 700;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ios-modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+}
+
+.ios-lead {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.ios-step-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #1e293b;
+    line-height: 1.5;
+}
+
+.ios-step-num {
+    background: #2563eb;
+    color: #ffffff;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.btn-block {
+    width: 100%;
+    margin-top: 16px;
+}
+
+/* ==========================================
+   모바일 최적화 (Responsive Mobile Media Queries)
+   ========================================== */
+@media (max-width: 768px) {
+    body {
+        font-size: 14px;
+    }
+
+    /* 네비게이션 모바일 최적화 */
+    .navbar {
+        padding: 10px 14px;
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+    }
+
+    .nav-container {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .logo-area {
+        gap: 8px;
+    }
+
+    .logo-img {
+        width: 30px;
+        height: 30px;
+    }
+
+    .navbar h1 {
+        font-size: 16px;
+    }
+
+    .subtitle {
+        display: none;
+    }
+
+    .nav-actions {
+        gap: 6px;
+    }
+
+    .btn-pwa-install {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+
+    .btn-lock {
+        padding: 5px 10px;
+        font-size: 11px;
+    }
+
+    .status-badge {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+
+    /* 메인 컨테이너 */
+    .container {
+        padding: 12px 10px 40px;
+        max-width: 100%;
+    }
+
+    /* 카드 */
+    .card {
+        padding: 16px 12px;
+        border-radius: 12px;
+        margin-bottom: 14px;
+    }
+
+    .card-header {
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 14px;
+    }
+
+    .card-header h2 {
+        font-size: 16px;
+    }
+
+    /* 업로드 영역 모바일 */
+    .dropzone {
+        padding: 24px 14px;
+        min-height: 140px;
+    }
+
+    .upload-icon {
+        font-size: 36px;
+    }
+
+    .dropzone-title {
+        font-size: 14px;
+    }
+
+    .dropzone-hint {
+        font-size: 11px;
+    }
+
+    .upload-actions {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .upload-actions .btn {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+        font-size: 14px;
+    }
+
+    /* 통계 진단 그리드 모바일 */
+    .inspect-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    .inspect-item {
+        padding: 10px;
+    }
+
+    .inspect-item .val {
+        font-size: 16px;
+    }
+
+    /* 테이블 모바일 가로 스크롤 최적화 */
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin-left: -4px;
+        margin-right: -4px;
+        border-radius: 8px;
+    }
+
+    .preview-table, .calc-table {
+        min-width: 600px;
+        font-size: 12px;
+    }
+
+    .preview-table th, .preview-table td,
+    .calc-table th, .calc-table td {
+        padding: 8px 10px;
+        white-space: nowrap;
+    }
+
+    /* 자연어 질의 영역 */
+    .nlp-example-chips {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 8px;
+        gap: 6px;
+    }
+
+    .nlp-chip {
+        flex-shrink: 0;
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+
+    .nlp-query-bar {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .nlp-input {
+        min-height: 44px;
+        font-size: 16px;
+        width: 100%;
+    }
+
+    .nlp-send-btn {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+    }
+
+    /* 도구 실행 폼 */
+    .run-form-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .form-group select,
+    .form-group input {
+        min-height: 44px;
+        font-size: 16px;
+    }
+
+    .btn-run-execute {
+        width: 100%;
+        min-height: 46px;
+    }
+
+    /* 차트 컨테이너 */
+    .chart-wrapper {
+        min-height: 280px;
+        max-height: 360px;
+    }
+
+    /* 설명 탭 및 보고서 */
+    .explain-tabs {
+        width: 100%;
+    }
+
+    .explain-tab-btn {
+        flex: 1;
+        padding: 10px;
+        font-size: 13px;
+        text-align: center;
+    }
+
+    /* 후속 질문 채팅 입력 */
+    .chat-input-bar {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .chat-input {
+        width: 100%;
+        min-height: 44px;
+        font-size: 16px;
+    }
+
+    .chat-send-btn {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+    }
+
+    /* 로그 패널 */
+    .log-header {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+}
+
+@media (max-width: 480px) {
+    .navbar {
+        padding: 8px 10px;
+    }
+
+    .logo-area h1 {
+        font-size: 14px;
+    }
+
+    .btn-pwa-install .pwa-text {
+        display: none;
+    }
+
+    .btn-lock .lock-text {
+        display: none;
+    }
+
+    .inspect-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .auth-card {
+        padding: 24px 16px 20px;
+        border-radius: 20px;
+    }
+
+    .key-btn {
+        height: 52px;
+        font-size: 20px;
+    }
+}
+

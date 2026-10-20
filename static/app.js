@@ -106,7 +106,255 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/>/g, "&gt;");
     }
 
+    // ==========================================
+    // 0. 보안 잠금 인증 시스템 (비밀번호: 0904)
+    // ==========================================
+    const AUTH_SESSION_KEY = "adi_auth_passed_0904";
+    const authLockOverlay = document.getElementById("authLockOverlay");
+    const pinDots = document.getElementById("pinDots");
+    const pinFeedback = document.getElementById("pinFeedback");
+    const lockScreenBtn = document.getElementById("lockScreenBtn");
+    const hiddenPinInput = document.getElementById("hiddenPinInput");
+    let enteredPin = "";
+    let isVerifying = false;
+
+    function initAuthLock() {
+        const isAuthPassed = sessionStorage.getItem(AUTH_SESSION_KEY) === "true";
+        if (isAuthPassed) {
+            if (authLockOverlay) authLockOverlay.classList.add("hidden");
+        } else {
+            if (authLockOverlay) authLockOverlay.classList.remove("hidden");
+            focusHiddenInput();
+        }
+
+        // 키패드 버튼 클릭 이벤트
+        document.querySelectorAll(".auth-keypad .key-btn").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.preventDefault();
+                const val = btn.dataset.val;
+                if (val === "clear") {
+                    handlePinClear();
+                } else if (val === "back") {
+                    handlePinBack();
+                } else if (val) {
+                    handlePinDigit(val);
+                }
+            });
+        });
+
+        // 물리 키보드 입력 지원
+        window.addEventListener("keydown", (e) => {
+            if (!authLockOverlay || authLockOverlay.classList.contains("hidden")) return;
+            if (e.key >= "0" && e.key <= "9") {
+                handlePinDigit(e.key);
+            } else if (e.key === "Backspace") {
+                handlePinBack();
+            } else if (e.key === "Escape" || e.key === "c" || e.key === "C") {
+                handlePinClear();
+            }
+        });
+
+        // 화면 잠금 버튼
+        if (lockScreenBtn) {
+            lockScreenBtn.addEventListener("click", () => {
+                sessionStorage.removeItem(AUTH_SESSION_KEY);
+                handlePinClear();
+                if (authLockOverlay) authLockOverlay.classList.remove("hidden");
+                focusHiddenInput();
+                logEvent("AUTH", "화면 수동 잠금");
+            });
+        }
+    }
+
+    function focusHiddenInput() {
+        if (hiddenPinInput) {
+            setTimeout(() => hiddenPinInput.focus(), 150);
+        }
+    }
+
+    function updatePinDotsUI() {
+        const dots = document.querySelectorAll("#pinDots .pin-dot");
+        dots.forEach((dot, idx) => {
+            if (idx < enteredPin.length) {
+                dot.classList.add("filled");
+            } else {
+                dot.classList.remove("filled");
+            }
+        });
+    }
+
+    function handlePinDigit(digit) {
+        if (isVerifying || enteredPin.length >= 4) return;
+        enteredPin += digit;
+        updatePinDotsUI();
+
+        if (navigator.vibrate) {
+            try { navigator.vibrate(30); } catch(e) {}
+        }
+
+        if (enteredPin.length === 4) {
+            verifyEnteredPin();
+        }
+    }
+
+    function handlePinBack() {
+        if (isVerifying || enteredPin.length === 0) return;
+        enteredPin = enteredPin.slice(0, -1);
+        updatePinDotsUI();
+        if (pinFeedback) {
+            pinFeedback.className = "pin-feedback";
+            pinFeedback.textContent = "비밀번호 4자리를 입력하세요";
+        }
+    }
+
+    function handlePinClear() {
+        if (isVerifying) return;
+        enteredPin = "";
+        updatePinDotsUI();
+        if (pinFeedback) {
+            pinFeedback.className = "pin-feedback";
+            pinFeedback.textContent = "비밀번호 4자리를 입력하세요";
+        }
+        if (pinDots) {
+            pinDots.classList.remove("shake", "success");
+        }
+    }
+
+    async function verifyEnteredPin() {
+        isVerifying = true;
+        if (pinFeedback) {
+            pinFeedback.className = "pin-feedback";
+            pinFeedback.textContent = "비밀번호 확인 중...";
+        }
+
+        const TARGET_PIN = "0904";
+        const isValid = enteredPin === TARGET_PIN;
+
+        if (isValid) {
+            if (pinDots) pinDots.classList.add("success");
+            if (pinFeedback) {
+                pinFeedback.className = "pin-feedback success";
+                pinFeedback.textContent = "인증 성공! 접속합니다...";
+            }
+            sessionStorage.setItem(AUTH_SESSION_KEY, "true");
+            logEvent("AUTH", "보안 인증 완료 (0904)");
+
+            // 백엔드 API 인증 호출 (비동기)
+            fetch("/api/auth/verify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pin: enteredPin })
+            }).catch(() => {});
+
+            setTimeout(() => {
+                if (authLockOverlay) authLockOverlay.classList.add("hidden");
+                if (pinDots) pinDots.classList.remove("success");
+                isVerifying = false;
+            }, 350);
+        } else {
+            if (pinDots) pinDots.classList.add("shake");
+            if (pinFeedback) {
+                pinFeedback.className = "pin-feedback error";
+                pinFeedback.textContent = "비밀번호가 올바르지 않습니다.";
+            }
+            if (navigator.vibrate) {
+                try { navigator.vibrate(150); } catch(e) {}
+            }
+
+            setTimeout(() => {
+                if (pinDots) pinDots.classList.remove("shake");
+                enteredPin = "";
+                updatePinDotsUI();
+                isVerifying = false;
+            }, 500);
+        }
+    }
+
+    // ==========================================
+    // 0-1. PWA 설치 및 서비스 워커 관리
+    // ==========================================
+    let deferredPrompt = null;
+    const pwaInstallBtn = document.getElementById("pwaInstallBtn");
+    const iosInstallModal = document.getElementById("iosInstallModal");
+    const closeIosModalBtn = document.getElementById("closeIosModalBtn");
+    const closeIosModalBackdrop = document.getElementById("closeIosModalBackdrop");
+    const confirmIosModalBtn = document.getElementById("confirmIosModalBtn");
+
+    function initPWA() {
+        // 서비스 워커 등록
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("/sw.js").then((reg) => {
+                    logEvent("PWA", `서비스 워커 등록 완료 (Scope: ${reg.scope})`);
+                }).catch((err) => {
+                    logEvent("PWA", `서비스 워커 등록 알림: ${err.message}`);
+                });
+            });
+        }
+
+        const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+        const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+
+        if (pwaInstallBtn) {
+            if (isStandalone) {
+                pwaInstallBtn.style.display = "inline-flex";
+                pwaInstallBtn.classList.add("installed");
+                pwaInstallBtn.innerHTML = '<span class="pwa-icon">📲</span><span class="pwa-text">앱 실행 중</span>';
+            } else {
+                pwaInstallBtn.style.display = "inline-flex";
+            }
+
+            pwaInstallBtn.addEventListener("click", async () => {
+                if (isStandalone) {
+                    alert("이미 홈 화면 앱(PWA) 모드로 실행 중입니다!");
+                    return;
+                }
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    logEvent("PWA", `앱 설치 응답: ${outcome}`);
+                    if (outcome === "accepted") {
+                        pwaInstallBtn.classList.add("installed");
+                        pwaInstallBtn.innerHTML = '<span class="pwa-icon">✅</span><span class="pwa-text">설치 완료</span>';
+                        deferredPrompt = null;
+                    }
+                } else if (isIos) {
+                    if (iosInstallModal) iosInstallModal.style.display = "flex";
+                } else {
+                    alert("브라우저 상단 주소창 우측의 '앱 설치' 아이콘(⬇)을 누르시거나, 브라우저 메뉴에서 '홈 화면에 추가'를 선택해주세요.");
+                }
+            });
+        }
+
+        window.addEventListener("beforeinstallprompt", (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            logEvent("PWA", "설치 가능 이벤트 (beforeinstallprompt) 감지");
+            if (pwaInstallBtn && !isStandalone) {
+                pwaInstallBtn.style.display = "inline-flex";
+            }
+        });
+
+        window.addEventListener("appinstalled", () => {
+            logEvent("PWA", "앱 설치 완료 감지");
+            if (pwaInstallBtn) {
+                pwaInstallBtn.classList.add("installed");
+                pwaInstallBtn.innerHTML = '<span class="pwa-icon">✅</span><span class="pwa-text">설치 완료</span>';
+            }
+            deferredPrompt = null;
+        });
+
+        const closeIosModal = () => {
+            if (iosInstallModal) iosInstallModal.style.display = "none";
+        };
+        if (closeIosModalBtn) closeIosModalBtn.addEventListener("click", closeIosModal);
+        if (closeIosModalBackdrop) closeIosModalBackdrop.addEventListener("click", closeIosModal);
+        if (confirmIosModalBtn) confirmIosModalBtn.addEventListener("click", closeIosModal);
+    }
+
     // 1. 페이지 로드 초기화
+    initAuthLock();
+    initPWA();
     logEvent("PAGE", "페이지 로드 완료");
     checkServerHealth();
 
