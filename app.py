@@ -18,6 +18,9 @@ import tools
 # 환경변수 로드
 load_dotenv()
 
+# 기준 디렉터리 경로
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
 # Windows 콘솔 및 로거의 UTF-8 입출력 강제 설정
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     try:
@@ -26,24 +29,35 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-# 로깅 포맷터 및 핸들러 설정 (콘솔 + app.log 파일)
+# 로깅 포맷터 및 핸들러 설정 (콘솔 + 안전한 파일 로깅)
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(log_formatter)
+handlers = [console_handler]
 
-file_handler = logging.FileHandler("app.log", encoding="utf-8")
-file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(log_formatter)
+# 서버리스 환경(Vercel 등)의 읽기 전용 파일시스템 고려 (/tmp 사용)
+log_file_path = "/tmp/app.log" if os.environ.get("VERCEL") else os.path.join(BASE_DIR, "app.log")
+try:
+    file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(log_formatter)
+    handlers.append(file_handler)
+except Exception:
+    pass
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
-root_logger.handlers = [console_handler, file_handler]
+root_logger.handlers = handlers
 
 logger = logging.getLogger("data-insight-builder")
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static")
+)
 
 # 업로드 용량 제한 설정 (기본 10MB)
 max_mb = int(os.getenv("MAX_UPLOAD_MB", 10))
@@ -334,7 +348,9 @@ def query_data():
 
     df = CURRENT_DATASET.get("df")
     if df is None:
-        default_csv = "data/API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv"
+        default_csv = os.path.join(BASE_DIR, "data", "API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv")
+        if not os.path.exists(default_csv):
+            default_csv = "data/API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv"
         if os.path.exists(default_csv):
             with open(default_csv, "rb") as f:
                 content_str, _ = try_decode(f.read())
@@ -736,7 +752,9 @@ def run_tool():
         df = CURRENT_DATASET["df"]
 
     if df is None:
-        default_csv = "data/API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv"
+        default_csv = os.path.join(BASE_DIR, "data", "API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv")
+        if not os.path.exists(default_csv):
+            default_csv = "data/API_IT.NET.USER.ZS_DS2_en_csv_v2_468465.csv"
         if os.path.exists(default_csv):
             with open(default_csv, "rb") as f:
                 content_str, _ = try_decode(f.read())
@@ -967,8 +985,8 @@ def followup_chat():
 def get_recent_logs():
     """최근 서버 실행 로그 목록 반환"""
     try:
-        if os.path.exists("app.log"):
-            with open("app.log", "r", encoding="utf-8") as f:
+        if os.path.exists(log_file_path):
+            with open(log_file_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
                 return jsonify({"status": "success", "logs": [l.strip() for l in lines[-100:]]})
         return jsonify({"status": "success", "logs": []})

@@ -402,7 +402,8 @@ def group_summary(df, reference_period, group_column=None, value_column=None, ex
 
     if (group_column is None or group_column not in working_df.columns):
         if "Country Code" in working_df.columns:
-            meta_files = glob.glob("data/Metadata_Country*.csv")
+            base_d = os.path.dirname(os.path.abspath(__file__))
+            meta_files = glob.glob(os.path.join(base_d, "data", "Metadata_Country*.csv")) or glob.glob("data/Metadata_Country*.csv")
             if meta_files:
                 try:
                     meta_df = pd.read_csv(meta_files[0])
